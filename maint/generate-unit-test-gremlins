@@ -1,0 +1,48 @@
+#!/usr/bin/env python2
+
+import glob
+import os
+import os.path
+
+# (file relative to test/, # nodes, # data centers)
+GREMLINS = [
+    ('1-node-1-dc-cluster.gremlin', 1, 1),
+    ('2-node-1-dc-cluster.gremlin', 2, 1),
+    ('3-node-1-dc-cluster.gremlin', 3, 1),
+    ('4-node-1-dc-cluster.gremlin', 4, 1),
+    ('5-node-1-dc-cluster.gremlin', 5, 1),
+
+    #('1-node-3-dc-cluster.gremlin', 1, 3),
+
+    #('5-node-2-dc-cluster.gremlin', 5, 2),
+    #('5-node-3-dc-cluster.gremlin', 5, 3),
+    #('5-node-4-dc-cluster.gremlin', 5, 4),
+    #('5-node-5-dc-cluster.gremlin', 5, 5),
+]
+
+files = set()
+
+for gremlin, nodes, dcs in GREMLINS:
+    for x in glob.glob('test/unit/*.py'):
+        path = os.path.splitext(x)[0]
+        path += '.%dn.%ddc.gremlin' % (nodes, dcs)
+        f = open(path, 'w')
+        f.write('''#!/usr/bin/env gremlin
+include ../{gremlin}
+timeout 30
+run python ${{CONSUS_SRCDIR}}/{python}
+'''.format(gremlin=gremlin, python=x))
+        f.flush()
+        f.close()
+        os.chmod(path, 0755)
+        files.add(path)
+
+gremlins = ''
+for path in ['test/' + g[0] for g in GREMLINS] + sorted(files):
+    gremlins += 'gremlins += %s\n' % path
+START = '### begin automatically generated gremlins\n'
+END = '### end automatically generated gremlins\n'
+text = open('Makefile.am').read()
+head, tail = text.split(START)
+body, tail = tail.split(END)
+open('Makefile.am', 'w').write(head + START + gremlins + END + tail)

@@ -1,0 +1,169 @@
+{
+    <bash>
+    Memcheck:Leak
+    ...
+    obj:*/bash
+    ...
+}
+{
+    <sed>
+    Memcheck:Leak
+    ...
+    obj:*/sed
+    ...
+}
+{
+    <aio_fsync>
+    Memcheck:Leak
+    ...
+    fun:aio_fsync
+    ...
+}
+{
+    <popt>
+    Memcheck:Leak
+    ...
+    fun:poptGetNextOpt
+    ...
+}
+{
+    <glibc-tls-leak>
+    Memcheck:Leak
+    fun:calloc
+    fun:allocate_dtv
+    fun:_dl_allocate_tls
+    fun:pthread_create@@*
+    ...
+}
+{
+    <glog>
+    Memcheck:Addr1
+    ...
+    fun:_ZN6google24glog_internal_namespace_26InitGoogleLoggingUtilitiesEPKc
+    ...
+}
+{
+    <glog>
+    Memcheck:Addr1
+    ...
+    fun:_ZN6google11LogToStderrEv
+    ...
+}
+{
+    <glog>
+    Memcheck:Addr2
+    ...
+    fun:_ZN6google11LogToStderrEv
+    ...
+}
+{
+    <glog>
+    Memcheck:Addr4
+    ...
+    fun:_ZN6google11LogToStderrEv
+    ...
+}
+{
+    <glog>
+    Memcheck:Addr8
+    ...
+    fun:_ZN6google11LogToStderrEv
+    ...
+}
+{
+    <glog>
+    Memcheck:Leak
+    ...
+    fun:_ZN6google11LogToStderrEv
+    ...
+}
+{
+    <glog>
+    Memcheck:Leak
+    ...
+    obj:/usr/*lib*/libglog*so*
+    ...
+}
+{
+    <python>
+    Memcheck:Addr4
+    obj:/usr/*lib*/libpython*so*
+    ...
+}
+{
+    <python>
+    Memcheck:Cond
+    obj:/usr/*lib*/libpython*so*
+    ...
+}
+{
+    <python>
+    Memcheck:Leak
+    fun:malloc
+    obj:/usr/*lib*/libpython*so*
+    ...
+}
+{
+    <python>
+    Memcheck:Value8
+    obj:/usr/*lib*/libpython*so*
+    ...
+}
+{
+    <python>
+    Memcheck:Addr4
+    obj:/usr/*bin*/python*
+    ...
+}
+{
+    <python>
+    Memcheck:Cond
+    obj:/usr/*bin*/python*
+    ...
+}
+{
+    <python>
+    Memcheck:Leak
+    fun:calloc
+    obj:/usr/*bin*/python*
+    ...
+}
+{
+    <python>
+    Memcheck:Leak
+    fun:malloc
+    obj:/usr/*bin*/python*
+    ...
+}
+{
+    <python>
+    Memcheck:Leak
+    fun:realloc
+    obj:/usr/*bin*/python*
+    ...
+}
+{
+    <python>
+    Memcheck:Value8
+    obj:/usr/*bin*/python*
+    ...
+}
+{
+    <replicated-object-will-always-leak>
+    Memcheck:Leak
+    match-leak-kinds: definite
+    fun:_ZnwmRKSt9nothrow_t
+    fun:consus_coordinator_create
+    fun:action_ctor
+    fun:main
+}
+{
+    <replicated-object-will-always-leak>
+    Memcheck:Leak
+    match-leak-kinds: definite
+    fun:_Znwm
+    fun:_ZN6consus11coordinator8recreateEP11rsm_contextPKcm
+    fun:consus_coordinator_recreate
+    fun:action_rtor
+    fun:main
+}

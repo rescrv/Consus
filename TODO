@@ -1,0 +1,15 @@
+List of major "TODO" items left:
+ - Transaction manager replay log on restart.  Necessary for txman to come back
+   after a crash.
+ - Locking in the key-value store.  Necessary to actually uphold serializability.
+   This will require implementing SCAN first, otherwise it will need to be
+   rewritten.
+ - Client-DC affiliation (currently just picks one group at random per
+   transaction)
+ - Garbage collection of in-memory structures
+ - Garbage collection of log
+ - SCAN(k, n) operation.  Equivalent to selecting the next n keys >= k.
+ - Testing
+ - Optimization
+    - Durable log throughput/latency
+    - Remove early phases of paxos with implicit leader

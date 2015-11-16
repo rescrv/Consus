@@ -1,0 +1,89 @@
+\documentclass[10pt,oneside]{book}
+
+\ifx \HCode\Undef
+\newcommand*{\topdir}{.}%
+\else
+\def\pgfsysdriver{pgfsys-tex4ht.def}
+\newcommand*{\topdir}{..}%
+\fi
+
+\usepackage{hyperref}
+\usepackage{nameref}
+\usepackage{minted}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{calc}
+\usepackage{ulem}
+\usepackage{tikz}
+\usepackage{comment}
+\usepackage[margin=1in]{geometry}
+\usepackage[small,compact]{titlesec}
+\usepackage[binary,squaren]{SIunits}
+\usetikzlibrary{arrows}
+\usetikzlibrary{decorations.markings}
+\usepackage{makeidx}
+
+\makeindex
+\AtBeginDocument{\renewcommand{\bibname}{References}}
+
+\newcommand{\ConsusVersion}{0.1.dev}
+\newcommand{\code}[1]{\texttt{#1}}
+
+% http://texblog.org/2012/03/21/cross-referencing-list-items/
+\makeatletter
+\def\namedlabel#1#2{\begingroup
+    #2%
+    \def\@currentlabel{#2}%
+    \phantomsection\label{#1}\endgroup
+}
+\makeatother
+
+\setcounter{secnumdepth}{3}
+\setcounter{tocdepth}{2}
+
+\title{Consus Reference Manual v\ConsusVersion}
+\author{Consus Team}
+
+\newminted{c}{samepage}
+\newminted{console}{samepage}
+\newminted{go}{samepage}
+\newminted{java}{samepage}
+\newminted{javascript}{samepage}
+\newminted{json}{samepage}
+\newminted{pycon}{samepage}
+\newminted{python}{samepage}
+\newminted{ruby}{samepage}
+
+\begin{document}
+
+\frontmatter
+\maketitle
+\tableofcontents
+
+\mainmatter
+
+\part{For Developers}
+\label{part:for-developers}
+
+\part{For Administrators}
+\label{part:for-admins}
+
+\part{API Reference}
+\label{part:api-ref}
+
+\ifx \HCode\Undef % >>>>>>>>>>>>>>>>>>>
+\backmatter
+
+% Index
+\clearpage
+\addcontentsline{toc}{chapter}{Index}
+\printindex
+
+% References
+\clearpage
+\addcontentsline{toc}{chapter}{References}
+\bibliographystyle{plain}
+\bibliography{consus}
+\fi               % <<<<<<<<<<<<<<<<<<<
+
+\end{document}

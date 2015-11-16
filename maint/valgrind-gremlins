@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+
+import os
+import os.path
+import stat
+
+def lines():
+    for line in open('Makefile.am'):
+        yield 'file', line
+        x = line.split('+=')
+        if len(x) != 2: continue
+        g = x[1].strip()
+        if not g.endswith('.gremlin'): continue
+        if g.endswith('.valgrind.gremlin'): continue
+        if not os.path.exists(g): continue
+        v = g[:-len('.gremlin')] + '.valgrind.gremlin'
+        f = open(v, 'w')
+        f.write('#!/usr/bin/env gremlin\n')
+        f.write("env GREMLIN_PREFIX 'libtool --mode=execute valgrind --tool=memcheck --trace-children=yes --error-exitcode=127 --leak-check=full --gen-suppressions=all --suppressions=\"${CONSUS_SRCDIR}/consus.supp\"'\n")
+        f.write('include ' + os.path.basename(g) + '\n')
+        f.flush()
+        f.close()
+        os.chmod(v, stat.S_IRWXU)
+        yield 'auto', (x[0] + '+= ' + v + '\n')
+
+prev = None
+fout = open('Makefile.am.tmp', 'w')
+for line in lines():
+    if prev is None or prev[0] != 'auto' or prev[1] != line[1]:
+        fout.write(line[1])
+    prev = line
+fout.flush()
+fout.close
+os.rename('Makefile.am.tmp', 'Makefile.am')
