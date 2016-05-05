@@ -85,6 +85,8 @@ coordinator :: coordinator()
     , m_kvs_quiescence_counter(0)
     , m_kvss_changed(false)
 {
+    data_center* dc = new_data_center("default");
+    m_dc_default = dc->id;
 }
 
 coordinator :: ~coordinator() throw ()
