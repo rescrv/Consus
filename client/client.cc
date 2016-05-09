@@ -270,7 +270,7 @@ client :: availability_check(consus_availability_requirements* reqs,
 
         if (timeout > 0)
         {
-            to = (start + PO6_SECONDS * timeout - now + PO6_MILLIS) / PO6_MILLIS;
+            to = (start + PO6_SECONDS * timeout - now) / PO6_MILLIS + 1;
             to = std::min(to, int(PO6_MILLIS * 100));
         }
 
@@ -310,8 +310,7 @@ client :: availability_check(consus_availability_requirements* reqs,
             return -1;
         }
 
-        version = vid.get();
-
+        version = vid.get() + 1;
         unsigned txmans_avail = 0;
 
         for (size_t i = 0; i < txmans.size(); ++i)
@@ -622,7 +621,7 @@ client :: inner_loop(int timeout, consus_returncode* status)
             handle_disruption(id);
             return 0;
         case BUSYBEE_EXTERNAL:
-            if (maintain_coord_connection(status) < 0)
+            if (!maintain_coord_connection(status))
             {
                 return -1;
             }

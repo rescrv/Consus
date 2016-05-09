@@ -1,0 +1,4 @@
+#!/usr/bin/env gremlin
+include ../1-node-3-dc-cluster.gremlin
+timeout 30
+run python ${CONSUS_SRCDIR}/test/unit/00.nop-commit.py

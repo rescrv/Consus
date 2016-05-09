@@ -14,6 +14,7 @@ class transaction_group
 {
     public:
         static uint64_t hash(const transaction_group& tg) { return tg.hash(); }
+        static std::string log(const transaction_group& tg);
 
     public:
         transaction_group();

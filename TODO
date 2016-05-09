@@ -13,3 +13,11 @@ List of major "TODO" items left:
  - Optimization
     - Durable log throughput/latency
     - Remove early phases of paxos with implicit leader
+
+
+- rate limit p1a messages for global/local gpaxos
+
+- retransmit m1b via inner machine
+- add assert to ensure learned cstruct never goes lower
+- every txman operation should check outcome in dispositions and react
+  appropriately

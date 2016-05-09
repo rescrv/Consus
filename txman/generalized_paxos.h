@@ -10,6 +10,7 @@
 
 // consus
 #include "namespace.h"
+#include "common/macros.h"
 #include "common/paxos_group.h"
 
 BEGIN_CONSUS_NAMESPACE
@@ -54,8 +55,8 @@ class generalized_paxos
         {
             enum type_t
             {
-                CLASSIC,
-                FAST
+                CLASSIC = 1,
+                FAST = 2
             };
 
             ballot();
@@ -80,6 +81,9 @@ class generalized_paxos
             message_p1a();
             message_p1a(const ballot& b);
             ~message_p1a() throw ();
+            bool operator == (const message_p1a& rhs) const;
+            bool operator != (const message_p1a& rhs) const
+            { return !(*this == rhs); }
 
             ballot b; // called "m" in the paper
         };
@@ -88,6 +92,9 @@ class generalized_paxos
             message_p1b();
             message_p1b(const ballot& b, abstract_id acceptor, const ballot& vb, const cstruct& v);
             ~message_p1b() throw ();
+            bool operator == (const message_p1b& rhs) const;
+            bool operator != (const message_p1b& rhs) const
+            { return !(*this == rhs); }
 
             ballot b; // called "m" in the paper
             abstract_id acceptor; // called "a" in the paper
@@ -99,6 +106,9 @@ class generalized_paxos
             message_p2a();
             message_p2a(const ballot& b, const cstruct& v);
             ~message_p2a() throw ();
+            bool operator == (const message_p2a& rhs) const;
+            bool operator != (const message_p2a& rhs) const
+            { return !(*this == rhs); }
 
             ballot b; // called "m" in the paper
             cstruct v; // called "maxTried[m]•C" or "v" in the paper
@@ -108,6 +118,9 @@ class generalized_paxos
             message_p2b();
             message_p2b(const ballot& b, abstract_id acceptor, const cstruct& v);
             ~message_p2b() throw ();
+            bool operator == (const message_p2b& rhs) const;
+            bool operator != (const message_p2b& rhs) const
+            { return !(*this == rhs); }
 
             ballot b; // called "m" in the paper
             abstract_id acceptor; // called "a" in the paper
@@ -121,8 +134,8 @@ class generalized_paxos
     public:
         void init(const comparator* cmp, abstract_id us, const abstract_id* acceptors, size_t acceptors_sz);
 
-        void propose(const command& c);
-        void propose_from_p2b(const message_p2b& m);
+        bool propose(const command& c);
+        bool propose_from_p2b(const message_p2b& m);
         void advance(bool may_attempt_leadership,
                      bool* send_m1, message_p1a* m1,
                      bool* send_m2, message_p2a* m2,
@@ -130,9 +143,9 @@ class generalized_paxos
 
         // react to messages
         void process_p1a(const message_p1a& m, bool* send, message_p1b* r);
-        void process_p1b(const message_p1b& m);
+        bool process_p1b(const message_p1b& m);
         void process_p2a(const message_p2a& m, bool* send, message_p2b* r);
-        void process_p2b(const message_p2b& m);
+        bool process_p2b(const message_p2b& m);
 
         // what has been cumulatively learned throughout the system, from the
         // limited amount that this instance can observe
@@ -159,6 +172,7 @@ class generalized_paxos
         // cstructs are command histories as described in the paper,
         // not sequences
         typedef std::set<std::pair<command, command> > partial_order_t;
+        bool cstruct_lt(const cstruct& lhs, const cstruct& rhs);
         bool cstruct_le(const cstruct& lhs, const cstruct& rhs);
         bool cstruct_eq(const cstruct& lhs, const cstruct& rhs);
         bool cstruct_compatible(const cstruct& lhs, const cstruct& rhs);
@@ -214,6 +228,63 @@ std::ostream&
 operator << (std::ostream& out, const generalized_paxos::ballot& b);
 std::ostream&
 operator << (std::ostream& out, const generalized_paxos::ballot::type_t& t);
+std::ostream&
+operator << (std::ostream& lhs, const generalized_paxos::message_p1a& m1a);
+std::ostream&
+operator << (std::ostream& lhs, const generalized_paxos::message_p1b& m1b);
+std::ostream&
+operator << (std::ostream& lhs, const generalized_paxos::message_p2a& m2a);
+std::ostream&
+operator << (std::ostream& lhs, const generalized_paxos::message_p2b& m2b);
+
+e::packer
+operator << (e::packer pa, const generalized_paxos::command& rhs);
+e::unpacker
+operator >> (e::unpacker up, generalized_paxos::command& rhs);
+size_t
+pack_size(const generalized_paxos::command& c);
+
+e::packer
+operator << (e::packer pa, const generalized_paxos::cstruct& rhs);
+e::unpacker
+operator >> (e::unpacker up, generalized_paxos::cstruct& rhs);
+size_t
+pack_size(const generalized_paxos::cstruct& cs);
+
+e::packer
+operator << (e::packer pa, const generalized_paxos::ballot& rhs);
+e::unpacker
+operator >> (e::unpacker up, generalized_paxos::ballot& rhs);
+size_t
+pack_size(const generalized_paxos::ballot& b);
+
+e::packer
+operator << (e::packer pa, const generalized_paxos::message_p1a& rhs);
+e::unpacker
+operator >> (e::unpacker up, generalized_paxos::message_p1a& rhs);
+size_t
+pack_size(const generalized_paxos::message_p1a& m);
+
+e::packer
+operator << (e::packer pa, const generalized_paxos::message_p1b& rhs);
+e::unpacker
+operator >> (e::unpacker up, generalized_paxos::message_p1b& rhs);
+size_t
+pack_size(const generalized_paxos::message_p1b& m);
+
+e::packer
+operator << (e::packer pa, const generalized_paxos::message_p2a& rhs);
+e::unpacker
+operator >> (e::unpacker up, generalized_paxos::message_p2a& rhs);
+size_t
+pack_size(const generalized_paxos::message_p2a& m);
+
+e::packer
+operator << (e::packer pa, const generalized_paxos::message_p2b& rhs);
+e::unpacker
+operator >> (e::unpacker up, generalized_paxos::message_p2b& rhs);
+size_t
+pack_size(const generalized_paxos::message_p2b& m);
 
 END_CONSUS_NAMESPACE
 

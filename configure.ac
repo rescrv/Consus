@@ -51,5 +51,12 @@ AC_PYTHON_DEVEL([>= '2.6'])
 AS_CASE([$PYTHON_VERSION], [3*], [pythonsym=PyInit_], [2*], [pythonsym=init], [])
 AC_SUBST([PYTHON_SYMBOL], [${pythonsym}])
 
+AC_ARG_ENABLE([log-all-messages], [AS_HELP_STRING([--enable-log-all-messages],
+              [enable code to log all messages @<:@default: no@:>@])],
+              [enable_logall=${enableval}], [enable_logall=no])
+if test x"${enable_logall}" = xyes; then
+    AC_DEFINE([CONSUS_LOG_ALL_MESSAGES], [], [Log all network traffic at the INFO level])
+fi
+
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

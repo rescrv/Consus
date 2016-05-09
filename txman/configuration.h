@@ -38,7 +38,8 @@ class configuration
         std::vector<paxos_group_id> groups_for(comm_id id) const;
         const paxos_group* get_group(paxos_group_id id) const;
         bool is_member(paxos_group_id g, comm_id id) const;
-        bool choose_groups(paxos_group_id g, std::vector<paxos_group_id>* others) const;
+        bool choose_groups(paxos_group_id g, std::vector<paxos_group_id>* groups) const;
+        comm_id first_alive(paxos_group_id id) const; // XXX coordinator failure sensitive
 
     // key-value stores
     public:

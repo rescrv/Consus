@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+
+import sys
+
+R = int(sys.argv[1])
+DC = int(sys.argv[2])
+
+assert R < 9
+assert DC < 9
+
+PORT_COORD = 1982
+PORT_TXMAN = 22751
+PORT_KVS = 22761
+
+out = '''#!/usr/bin/env gremlin
+
+env GLOG_logtostderr
+env GLOG_minloglevel 0
+env GLOG_logbufsecs 0
+
+tcp-port'''
+
+for i in range(R):
+    out += str(PORT_COORD + i).rjust(6, ' ')
+for dc in range(DC):
+    out += ' \\\n        '
+    for i in range(R):
+        out += str(PORT_TXMAN + dc * 1000 + i).rjust(6, ' ')
+    out += ' \\\n        '
+    for i in range(R):
+        out += str(PORT_KVS + dc * 1000 + i).rjust(6, ' ')
+out += '\n\n'
+out += 'run mkdir ' + ' '.join('coord%d' % i for i in range(1, R + 1)) + '\n'
+out += '\n'
+for dc in range(1, DC + 1):
+    out += 'run mkdir ' + ' '.join('txman%d.dc%d' % (i, dc) for i in range(1, R + 1)) + '\n'
+out += '\n'
+for dc in range(1, DC + 1):
+    out += 'run mkdir ' + ' '.join('kvs%d.dc%d' % (i, dc) for i in range(1, R + 1)) + '\n'
+out += '\n'
+conn_str = ','.join('127.0.0.1:%d' % (PORT_COORD + i) for i in range(R))
+for i in range(R):
+    out += 'daemon consus coordinator --foreground --data=coord{0} --listen 127.0.0.1 --listen-port {1}{2}\n'.format(i + 1, PORT_COORD + i, ' --connect-string ' + conn_str if i > 0 else '')
+out += 'run replicant availability-check --servers {0} --timeout 30 --host 127.0.0.1 --port {1}\n'.format(R, PORT_COORD + R - 1)
+out += '\n'
+for dc in range(1, DC + 1):
+    out += 'run consus create-data-center --cluster {0} dc{1}\n'.format(conn_str, dc)
+del i
+for dc in range(1, DC + 1):
+    out += '\n'
+    out += 'run consus set-default-data-center dc{0}\n'.format(dc)
+    for r in range(1, R + 1):
+        out += 'daemon consus transaction-manager --debug --foreground --data=txman{0}.dc{1} --connect-string {2} --listen 127.0.0.1 --listen-port {3}\n'.format(r, dc, conn_str, PORT_TXMAN + dc * 1000 + r - 1001)
+    out += 'run consus availability-check --transaction-managers {0} --transaction-manager-groups {1} --timeout 30\n'.format(dc * R, dc)
+for dc in range(1, DC + 1):
+    out += '\n'
+    out += 'run consus set-default-data-center dc{0}\n'.format(dc)
+    for r in range(1, R + 1):
+        out += 'daemon consus key-value-store --debug --foreground --data=kvs{0}.dc{1} --connect-string {2} --listen 127.0.0.1 --listen-port {3}\n'.format(r, dc, conn_str, PORT_KVS + dc * 1000 + r - 1001)
+    out += 'run consus availability-check --key-value-stores {0} --timeout 30\n'.format(dc * R)
+out += '\n'
+out += 'run replicant availability-check --servers {0} --timeout 30 --host 127.0.0.1 --port {1}\n'.format(R, PORT_COORD + R - 1)
+out += 'run sleep 10 # XXX\n' # XXX
+
+sys.stdout.write(out)

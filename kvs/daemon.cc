@@ -559,6 +559,12 @@ daemon :: loop(size_t thread)
             case LV_VOTE_2A:
             case LV_VOTE_2B:
             case LV_VOTE_LEARN:
+            case COMMIT_RECORD:
+            case GV_PROPOSE:
+            case GV_VOTE_1A:
+            case GV_VOTE_1B:
+            case GV_VOTE_2A:
+            case GV_VOTE_2B:
             case KVS_RD_LOCKED:
             case KVS_RD_UNLOCKED:
             case KVS_WR_BEGUN:

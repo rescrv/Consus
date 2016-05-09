@@ -57,7 +57,7 @@ class transaction
                    const e::slice& value,
                    std::auto_ptr<e::buffer> backing,
                    daemon* d);
-        void commit(comm_id id, uint64_t nonce, uint64_t seqno, daemon* d);
+        void prepare(comm_id id, uint64_t nonce, uint64_t seqno, daemon* d);
         void abort(comm_id id, uint64_t nonce, uint64_t seqno, daemon* d);
 
     public:
@@ -84,6 +84,7 @@ class transaction
         struct comparison;
 
     private:
+        std::string logid();
         void ensure_initialized();
         void paxos_2a_begin(uint64_t seqno, e::unpacker up,
                             std::auto_ptr<e::buffer> backing, daemon* d);

@@ -37,6 +37,12 @@ enum network_msgtype
 
     COMMIT_RECORD   = 7905,
 
+    GV_PROPOSE      = 7906,
+    GV_VOTE_1A      = 7907,
+    GV_VOTE_1B      = 7908,
+    GV_VOTE_2A      = 7909,
+    GV_VOTE_2B      = 7910,
+
     KVS_RD_LOCK     = 7800,
     KVS_RD_LOCKED   = 7802,
     KVS_RD_UNLOCK   = 7803,

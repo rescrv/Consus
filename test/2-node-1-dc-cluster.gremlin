@@ -6,8 +6,7 @@ env GLOG_logbufsecs 0
 
 tcp-port  1982  1983 \
          22751 22752 \
-         22761 22762 \
-         22771 22772
+         22761 22762
 
 run mkdir coord1 coord2
 
@@ -27,8 +26,9 @@ daemon consus transaction-manager --debug --foreground --data=txman2.dc1 --conne
 run consus availability-check --transaction-managers 2 --transaction-manager-groups 1 --timeout 30
 
 run consus set-default-data-center dc1
-daemon consus key-value-store --debug --foreground --data=kvs1.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983 --listen 127.0.0.1 --listen-port 22771
-daemon consus key-value-store --debug --foreground --data=kvs2.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983 --listen 127.0.0.1 --listen-port 22772
+daemon consus key-value-store --debug --foreground --data=kvs1.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983 --listen 127.0.0.1 --listen-port 22761
+daemon consus key-value-store --debug --foreground --data=kvs2.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983 --listen 127.0.0.1 --listen-port 22762
 run consus availability-check --key-value-stores 2 --timeout 30
 
 run replicant availability-check --servers 2 --timeout 30 --host 127.0.0.1 --port 1983
+run sleep 10 # XXX

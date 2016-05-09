@@ -1,3 +1,4 @@
+// w
 // Copyright (c) 2015, Robert Escriva
 // All rights reserved.
 
@@ -16,6 +17,30 @@
 #pragma GCC diagnostic ignored "-Wlarger-than="
 
 using consus::local_voter;
+
+extern bool s_debug_mode;
+
+static const char*
+value_to_string(uint64_t v)
+{
+    const char* value = NULL;
+
+    if (v == CONSUS_VOTE_COMMIT)
+    {
+        value = "COMMIT";
+    }
+    else if (v == CONSUS_VOTE_ABORT)
+    {
+        value = "ABORT";
+    }
+    else
+    {
+        value = "???";
+    }
+
+    assert(value);
+    return value;
+}
 
 local_voter :: local_voter(const transaction_group& tg)
     : m_tg(tg)
@@ -78,12 +103,19 @@ local_voter :: vote_1a(comm_id id, unsigned idx, const paxos_synod::ballot& b, d
         return;
     }
 
-    if (idx >= m_group.members_sz ||
-        id != b.leader)
+    if (idx >= m_group.members_sz)
     {
+        LOG(ERROR) << logid() << " instance[" << idx << "] dropping 1a message with invalid index";
         return;
     }
 
+    if (id != b.leader)
+    {
+        LOG(ERROR) << logid() << " instance[" << idx << "] dropping 1a message led by " << b.leader << " received from " << id;
+        return;
+    }
+
+    LOG_IF(INFO, s_debug_mode) << logid() << " instance[" << idx << "] received phase 1 request to follow " << b;
     paxos_synod::ballot a;
     paxos_synod::pvalue p;
     m_votes[idx].phase1a(b, &a, &p);
@@ -101,6 +133,22 @@ local_voter :: vote_1a(comm_id id, unsigned idx, const paxos_synod::ballot& b, d
     msg->pack_at(BUSYBEE_HEADER_SIZE)
         << LV_VOTE_1B << m_tg << uint8_t(idx) << a << p;
     d->send_when_durable(entry, b.leader, msg);
+
+    if (s_debug_mode)
+    {
+        if (a == b && p.v)
+        {
+            LOG(INFO) << logid() << " instance[" << idx << "] following " << b << "; recommending previous value: " << value_to_string(p.v);
+        }
+        else if (a == b)
+        {
+            LOG(INFO) << logid() << " instance[" << idx << "] following " << b;
+        }
+        else
+        {
+            LOG(INFO) << logid() << " instance[" << idx << "] ignoring " << b << " because we are following " << a;
+        }
+    }
 }
 
 void
@@ -111,9 +159,27 @@ local_voter :: vote_1b(comm_id id, unsigned idx,
 {
     po6::threads::mutex::hold hold(&m_mtx);
 
-    if (idx >= m_group.members_sz)
+    if (!preconditions_for_paxos(d))
     {
         return;
+    }
+
+    if (idx >= m_group.members_sz)
+    {
+        LOG(ERROR) << logid() << " dropping 1b message with invalid index";
+        return;
+    }
+
+    if (s_debug_mode)
+    {
+        if (p.v)
+        {
+            LOG(INFO) << logid() << " instance[" << idx << "] received phase 1 response from " << id << " to follow " << b.leader << " with recommendation to " << value_to_string(p.v);
+        }
+        else
+        {
+            LOG(INFO) << logid() << " instance[" << idx << "] received phase 1 response from " << id << " to follow " << b.leader;
+        }
     }
 
     m_votes[idx].phase1b(id, b, p);
@@ -125,17 +191,30 @@ local_voter :: vote_2a(comm_id id, unsigned idx, const paxos_synod::pvalue& p, d
 {
     po6::threads::mutex::hold hold(&m_mtx);
 
-    if (idx >= m_group.members_sz ||
-        id != p.b.leader)
+    if (!preconditions_for_paxos(d))
     {
         return;
     }
 
+    if (idx >= m_group.members_sz)
+    {
+        LOG(ERROR) << logid() << " instance[" << idx << "] dropping 2a message with invalid index";
+        return;
+    }
+
+    if (id != p.b.leader)
+    {
+        LOG(ERROR) << logid() << " instance[" << idx << "] dropping 2a message led by " << p.b.leader << " received from " << id;
+        return;
+    }
+
+    LOG_IF(INFO, s_debug_mode) << logid() << " instance[" << idx << "] received phase 2 request from " << p.b.leader << " to accept " << value_to_string(p.v);
     bool send = false;
     m_votes[idx].phase2a(p, &send);
 
     if (send)
     {
+        LOG_IF(INFO, s_debug_mode) << logid() << " instance[" << idx << "] accepted decision to " << value_to_string(p.v);
         std::string entry;
         e::packer(&entry)
             << LOG_ENTRY_LOCAL_VOTE_2A << m_tg << uint8_t(idx) << p;
@@ -149,6 +228,10 @@ local_voter :: vote_2a(comm_id id, unsigned idx, const paxos_synod::pvalue& p, d
             << LV_VOTE_2B << m_tg << uint8_t(idx) << p;
         d->send_when_durable(entry, p.b.leader, msg);
     }
+    else
+    {
+        LOG_IF(INFO, s_debug_mode) << logid() << " instance[" << idx << "] request ignored; following higher ballot";
+    }
 }
 
 void
@@ -160,9 +243,11 @@ local_voter :: vote_2b(comm_id id, unsigned idx,
 
     if (idx >= m_group.members_sz)
     {
+        LOG(ERROR) << logid() << " instance[" << idx << "] dropping 2b message with invalid index";
         return;
     }
 
+    LOG_IF(INFO, s_debug_mode) << logid() << " instance[" << idx << "] received phase 2 response from " << id << " accepting decision to " << value_to_string(p.v) << " lead by " << p.b.leader;
     paxos_synod::phase_t x = m_votes[idx].phase();
     m_votes[idx].phase2b(id, p);
 
@@ -173,6 +258,7 @@ local_voter :: vote_2b(comm_id id, unsigned idx,
         e::packer(&entry)
             << LOG_ENTRY_LOCAL_LEARN << m_tg << uint8_t(idx) << m_votes[idx].learned();
         d->m_log.append(entry.data(), entry.size());
+        LOG_IF(INFO, s_debug_mode) << logid() << " instance[" << idx << "] decided to " << value_to_string(p.v) << "; overall votes are " << votes();
     }
 
     work_state_machine(d);
@@ -185,15 +271,19 @@ local_voter :: vote_learn(unsigned idx, uint64_t v, daemon* d)
 
     if (idx >= m_group.members_sz)
     {
+        LOG(ERROR) << logid() << " instance[" << idx << "] dropping learn message with invalid index";
         return;
     }
+
+    bool log = false;
 
     if (m_votes[idx].phase() == paxos_synod::LEARNED && 
         m_votes[idx].learned() != v)
     {
         // this should never happen; let's catch if it does so we can make sure
         // it doesn't happen in the future
-        LOG(ERROR) << "synod_commit learned inconsistent values: " << m_votes[idx].learned() << " vs " << v;
+        LOG(ERROR) << logid() << " instance[" << idx << "] learned inconsistent values: "
+                   << value_to_string(m_votes[idx].learned()) << " vs " << value_to_string(v);
     }
     else if (m_votes[idx].phase() != paxos_synod::LEARNED)
     {
@@ -201,9 +291,11 @@ local_voter :: vote_learn(unsigned idx, uint64_t v, daemon* d)
         e::packer(&entry)
             << LOG_ENTRY_LOCAL_LEARN << m_tg << uint8_t(idx) << v;
         d->m_log.append(entry.data(), entry.size());
+        log = true;
     }
 
     m_votes[idx].force_learn(v);
+    LOG_IF(INFO, s_debug_mode && log) << logid() << " instance[" << idx << "] decided to " << value_to_string(v) << "; overall votes are " << votes();
     work_state_machine(d);
 }
 
@@ -222,11 +314,59 @@ local_voter :: outcome(uint64_t* v)
     return m_has_outcome;
 }
 
+uint64_t
+local_voter :: outcome()
+{
+    po6::threads::mutex::hold hold(&m_mtx);
+    assert(m_has_outcome);
+    return m_outcome;
+}
+
+std::string
+local_voter :: logid()
+{
+    return transaction_group::log(m_tg) + " data center voter";
+}
+
+std::string
+local_voter :: votes()
+{
+    std::ostringstream ostr;
+
+    for (size_t i = 0; i < m_group.members_sz; ++i)
+    {
+        if (m_votes[i].phase() == paxos_synod::LEARNED)
+        {
+            uint64_t v = m_votes[i].learned();
+
+            if (v == CONSUS_VOTE_COMMIT)
+            {
+                ostr << "C";
+            }
+            else if (v == CONSUS_VOTE_ABORT)
+            {
+                ostr << "A";
+            }
+            else
+            {
+                ostr << "E";
+            }
+        }
+        else
+        {
+            ostr << "?";
+        }
+    }
+
+    return ostr.str();
+}
+
 bool
 local_voter :: preconditions_for_paxos(daemon* d)
 {
     uint64_t outcome;
 
+    // XXX failure sensitive; other nodes may expect response
     if (d->m_dispositions.get(m_tg, &outcome))
     {
         m_outcome_in_dispositions = true;
@@ -300,7 +440,7 @@ local_voter :: work_state_machine(daemon* d)
             }
             else if (m_votes[i].learned() != CONSUS_VOTE_ABORT)
             {
-                LOG(ERROR) << m_tg << ".synod_commit[" << i << "] learned invalid value " << m_votes[i].learned();
+                LOG(ERROR) << logid() << " instance[" << i << "] learned invalid value: " << m_votes[i].learned();
             }
         }
     }

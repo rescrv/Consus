@@ -6,8 +6,7 @@ env GLOG_logbufsecs 0
 
 tcp-port  1982  1983  1984  1985 \
          22751 22752 22753 22754 \
-         22761 22762 22763 22764 \
-         22771 22772 22773 22774
+         22761 22762 22763 22764
 
 run mkdir coord1 coord2 coord3 coord4
 
@@ -31,10 +30,11 @@ daemon consus transaction-manager --debug --foreground --data=txman4.dc1 --conne
 run consus availability-check --transaction-managers 4 --transaction-manager-groups 1 --timeout 30
 
 run consus set-default-data-center dc1
-daemon consus key-value-store --debug --foreground --data=kvs1.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984,127.0.0.1:1985 --listen 127.0.0.1 --listen-port 22771
-daemon consus key-value-store --debug --foreground --data=kvs2.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984,127.0.0.1:1985 --listen 127.0.0.1 --listen-port 22772
-daemon consus key-value-store --debug --foreground --data=kvs3.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984,127.0.0.1:1985 --listen 127.0.0.1 --listen-port 22773
-daemon consus key-value-store --debug --foreground --data=kvs4.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984,127.0.0.1:1985 --listen 127.0.0.1 --listen-port 22774
+daemon consus key-value-store --debug --foreground --data=kvs1.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984,127.0.0.1:1985 --listen 127.0.0.1 --listen-port 22761
+daemon consus key-value-store --debug --foreground --data=kvs2.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984,127.0.0.1:1985 --listen 127.0.0.1 --listen-port 22762
+daemon consus key-value-store --debug --foreground --data=kvs3.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984,127.0.0.1:1985 --listen 127.0.0.1 --listen-port 22763
+daemon consus key-value-store --debug --foreground --data=kvs4.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984,127.0.0.1:1985 --listen 127.0.0.1 --listen-port 22764
 run consus availability-check --key-value-stores 4 --timeout 30
 
 run replicant availability-check --servers 4 --timeout 30 --host 127.0.0.1 --port 1985
+run sleep 10 # XXX

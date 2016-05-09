@@ -10,7 +10,7 @@
 #include "coordinator/transitions.h"
 
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-pedantic"
+#pragma GCC diagnostic ignored "-Wpedantic"
 
 struct state_machine CONSUS_API rsm = {
     consus_coordinator_create,

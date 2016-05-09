@@ -7,6 +7,7 @@
 #include <set>
 
 // e
+#include <e/serialization.h>
 #include <e/strescape.h>
 
 // consus
@@ -59,22 +60,29 @@ generalized_paxos :: init(const comparator* cmp, abstract_id us, const abstract_
     m_learned.resize(acceptors_sz);
 }
 
-void
+bool
 generalized_paxos :: propose(const command& c)
 {
     if (std::find(m_proposed.begin(), m_proposed.end(), c) == m_proposed.end())
     {
         m_proposed.push_back(c);
+        return true;
     }
+
+    return false;
 }
 
-void
+bool
 generalized_paxos :: propose_from_p2b(const message_p2b& m)
 {
+    bool ret = false;
+
     for (size_t i = 0; i < m.v.commands.size(); ++i)
     {
-        propose(m.v.commands[i]);
+        ret = propose(m.v.commands[i]) || ret;
     }
+
+    return ret;
 }
 
 void
@@ -99,7 +107,7 @@ generalized_paxos :: advance(bool may_attempt_leadership,
     }
 
     if (may_attempt_leadership &&
-        (m_acceptor_ballot.leader != m_us ||
+        (m_leader_ballot.leader != m_us ||
          m_state == PARTICIPATING ||
          (m_leader_ballot.type == ballot::FAST && conflict)))
     {
@@ -162,9 +170,12 @@ generalized_paxos :: advance(bool may_attempt_leadership,
                 m_acceptor_value.commands.push_back(m_proposed[i]);
             }
         }
+    }
 
+    if (m_acceptor_value_src > ballot())
+    {
         *send_m3 = true;
-        *m3 = message_p2b(m_acceptor_ballot, m_us, m_acceptor_value);
+        *m3 = message_p2b(m_acceptor_value_src, m_us, m_acceptor_value);
     }
 }
 
@@ -194,7 +205,7 @@ generalized_paxos :: process_p1a(const message_p1a& m, bool* send, message_p1b* 
     }
 }
 
-void
+bool
 generalized_paxos :: process_p1b(const message_p1b& m)
 {
     assert(m_init);
@@ -202,19 +213,23 @@ generalized_paxos :: process_p1b(const message_p1b& m)
 
     if (idx >= m_acceptors.size())
     {
-        return;
+        return false;
     }
 
     if (m.b > m_leader_ballot)
     {
         m_state = PARTICIPATING;
+        return false;
     }
     else if (m.b == m_leader_ballot &&
-             m_promises[idx].b != m_leader_ballot &&
+             m_promises[idx].b <= m_leader_ballot &&
              m_state >= LEADING_PHASE1)
     {
         m_promises[idx] = m;
+        return true;
     }
+
+    return false;
 }
 
 // this implements Phase2bClassic of the distributed abstract algorithm
@@ -239,36 +254,37 @@ generalized_paxos :: process_p2a(const message_p2a& m, bool* send, message_p2b* 
     m_acceptor_value_src = m_acceptor_ballot;
     m_acceptor_value = m.v;
     *send = true;
-    *r = message_p2b(m_acceptor_ballot, m_us, m_acceptor_value);
+    *r = message_p2b(m_acceptor_value_src, m_us, m_acceptor_value);
 }
 
-void
+bool
 generalized_paxos :: process_p2b(const message_p2b& m)
 {
     assert(m_init);
-
-    if (m.b != m_acceptor_ballot)
-    {
-        return;
-    }
 
     size_t idx = index_of(m.acceptor);
 
     if (idx >= m_acceptors.size())
     {
-        return;
+        return false;
     }
+
+    bool changed = false;
 
     if (m_learned[idx].b < m.b)
     {
         m_learned[idx] = m;
+        changed = true;
     }
 
     if (m_learned[idx].b == m.b &&
-        cstruct_le(m_learned[idx].v, m.v))
+        cstruct_lt(m_learned[idx].v, m.v))
     {
         m_learned[idx] = m;
+        changed = true;
     }
+
+    return changed;
 }
 
 generalized_paxos::cstruct
@@ -431,7 +447,9 @@ generalized_paxos :: learned(cstruct** vs, size_t vs_sz,
         *v = cstruct_glb(*v, *vs[i], conflict);
     }
 
+#if GENERALIZED_PAXOS_DEBUG
     assert(cstruct_compatible(m_learned_cached, *v));
+#endif
 }
 
 generalized_paxos::cstruct
@@ -510,8 +528,24 @@ generalized_paxos :: proven_safe()
 }
 
 bool
+generalized_paxos :: cstruct_lt(const cstruct& lhs, const cstruct& rhs)
+{
+    if (lhs.commands.size() >= rhs.commands.size())
+    {
+        return false;
+    }
+
+    return cstruct_le(lhs, rhs) && !cstruct_eq(lhs, rhs);
+}
+
+bool
 generalized_paxos :: cstruct_le(const cstruct& lhs, const cstruct& rhs)
 {
+    if (lhs.commands.size() > rhs.commands.size())
+    {
+        return false;
+    }
+
     std::vector<command> lhs_elem;
     std::vector<command> rhs_elem;
     partial_order_t lhs_order;
@@ -566,6 +600,11 @@ generalized_paxos :: cstruct_le(const cstruct& lhs, const cstruct& rhs)
 bool
 generalized_paxos :: cstruct_eq(const cstruct& lhs, const cstruct& rhs)
 {
+    if (lhs.commands.size() != rhs.commands.size())
+    {
+        return false;
+    }
+
     std::vector<command> lhs_elem;
     std::vector<command> rhs_elem;
     partial_order_t lhs_order;
@@ -718,7 +757,9 @@ generalized_paxos :: cstruct_glb(const cstruct& lhs, const cstruct& rhs, bool* c
 generalized_paxos::cstruct
 generalized_paxos :: cstruct_lub(const cstruct& lhs, const cstruct& rhs)
 {
+#if GENERALIZED_PAXOS_DEBUG
     assert(cstruct_compatible(lhs, rhs));
+#endif
     std::vector<command> lhs_elem(lhs.commands);
     std::vector<command> rhs_elem(rhs.commands);
     std::sort(lhs_elem.begin(), lhs_elem.end());
@@ -986,6 +1027,12 @@ generalized_paxos :: message_p1a :: ~message_p1a() throw ()
 {
 }
 
+bool
+generalized_paxos :: message_p1a :: operator == (const message_p1a& rhs) const
+{
+    return this->b == rhs.b;
+}
+
 generalized_paxos :: message_p1b :: message_p1b()
     : b()
     , acceptor()
@@ -1006,6 +1053,12 @@ generalized_paxos :: message_p1b :: ~message_p1b() throw ()
 {
 }
 
+bool
+generalized_paxos :: message_p1b :: operator == (const message_p1b& rhs) const
+{
+    return this->b == rhs.b && this->acceptor == rhs.acceptor && this->vb == rhs.vb && this->v == rhs.v;
+}
+
 generalized_paxos :: message_p2a :: message_p2a()
     : b()
     , v()
@@ -1020,6 +1073,12 @@ generalized_paxos :: message_p2a :: message_p2a(const ballot& _b, const cstruct&
 
 generalized_paxos :: message_p2a :: ~message_p2a() throw ()
 {
+}
+
+bool
+generalized_paxos :: message_p2a :: operator == (const message_p2a& rhs) const
+{
+    return this->b == rhs.b && this->v == rhs.v;
 }
 
 generalized_paxos :: message_p2b :: message_p2b()
@@ -1038,6 +1097,12 @@ generalized_paxos :: message_p2b :: message_p2b(const ballot& _b, abstract_id _a
 
 generalized_paxos :: message_p2b :: ~message_p2b() throw ()
 {
+}
+
+bool
+generalized_paxos :: message_p2b :: operator == (const message_p2b& rhs) const
+{
+    return this->b == rhs.b && this->acceptor == rhs.acceptor && this->v == rhs.v;
 }
 
 std::ostream&
@@ -1077,4 +1142,163 @@ std::ostream&
 consus :: operator << (std::ostream& out, const generalized_paxos::ballot::type_t& t)
 {
     return out << (t == generalized_paxos::ballot::FAST ? "FAST" : "CLASSIC");
+}
+
+std::ostream&
+consus :: operator << (std::ostream& lhs, const generalized_paxos::message_p1a& m1a)
+{
+    return lhs << "message_p1a(b=" << m1a.b << ")";
+}
+
+std::ostream&
+consus :: operator << (std::ostream& lhs, const generalized_paxos::message_p1b& m1b)
+{
+    return lhs << "message_p1b(b=" << m1b.b
+               << ", acceptor=" << m1b.acceptor
+               << ", vb=" << m1b.vb
+               << ", v=" << m1b.v;
+}
+
+std::ostream&
+consus :: operator << (std::ostream& lhs, const generalized_paxos::message_p2a& m2a)
+{
+    return lhs << "message_p2a(b=" << m2a.b
+               << ", v=" << m2a.v;
+}
+
+std::ostream&
+consus :: operator << (std::ostream& lhs, const generalized_paxos::message_p2b& m2b)
+{
+    return lhs << "message_p2b(b=" << m2b.b
+               << ", acceptor=" << m2b.acceptor
+               << ", v=" << m2b.v;
+}
+
+e::packer
+consus :: operator << (e::packer pa, const generalized_paxos::command& rhs)
+{
+    return pa << rhs.type << e::slice(rhs.value);
+}
+
+e::unpacker
+consus :: operator >> (e::unpacker up, generalized_paxos::command& rhs)
+{
+    e::slice v;
+    up = up >> rhs.type >> v;
+    rhs.value.assign(v.cdata(), v.size());
+    return up;
+}
+
+size_t
+consus :: pack_size(const generalized_paxos::command& c)
+{
+    return sizeof(uint16_t) + pack_size(e::slice(c.value));
+}
+
+e::packer
+consus :: operator << (e::packer pa, const generalized_paxos::cstruct& rhs)
+{
+    return pa << rhs.commands;
+}
+
+e::unpacker
+consus :: operator >> (e::unpacker up, generalized_paxos::cstruct& rhs)
+{
+    return up >> rhs.commands;
+}
+
+size_t
+consus :: pack_size(const generalized_paxos::cstruct& cs)
+{
+    return ::pack_size(cs.commands);
+}
+
+e::packer
+consus :: operator << (e::packer pa, const generalized_paxos::ballot& rhs)
+{
+    return pa << e::pack_uint8<generalized_paxos::ballot::type_t>(rhs.type) << rhs.number << rhs.leader;
+}
+
+e::unpacker
+consus :: operator >> (e::unpacker up, generalized_paxos::ballot& rhs)
+{
+    return up >> e::unpack_uint8<generalized_paxos::ballot::type_t>(rhs.type) >> rhs.number >> rhs.leader;
+}
+
+size_t
+consus :: pack_size(const generalized_paxos::ballot& b)
+{
+    return sizeof(uint8_t) + sizeof(uint64_t) + pack_size(b.leader);
+}
+
+e::packer
+consus :: operator << (e::packer pa, const generalized_paxos::message_p1a& rhs)
+{
+    return pa << rhs.b;
+}
+
+e::unpacker
+consus :: operator >> (e::unpacker up, generalized_paxos::message_p1a& rhs)
+{
+    return up >> rhs.b;
+}
+
+size_t
+consus :: pack_size(const generalized_paxos::message_p1a& m)
+{
+    return pack_size(m.b);
+}
+
+e::packer
+consus :: operator << (e::packer pa, const generalized_paxos::message_p1b& rhs)
+{
+    return pa << rhs.b << rhs.acceptor << rhs.vb << rhs.v;
+}
+
+e::unpacker
+consus :: operator >> (e::unpacker up, generalized_paxos::message_p1b& rhs)
+{
+    return up >> rhs.b >> rhs.acceptor >> rhs.vb >> rhs.v;
+}
+
+size_t
+consus :: pack_size(const generalized_paxos::message_p1b& m)
+{
+    return pack_size(m.b) + pack_size(m.acceptor) + pack_size(m.vb) + pack_size(m.v);
+}
+
+e::packer
+consus :: operator << (e::packer pa, const generalized_paxos::message_p2a& rhs)
+{
+    return pa << rhs.b << rhs.v;
+}
+
+e::unpacker
+consus :: operator >> (e::unpacker up, generalized_paxos::message_p2a& rhs)
+{
+    return up >> rhs.b >> rhs.v;
+}
+
+size_t
+consus :: pack_size(const generalized_paxos::message_p2a& m)
+{
+    return pack_size(m.b) + pack_size(m.v);
+}
+
+e::packer
+consus :: operator << (e::packer pa, const generalized_paxos::message_p2b& rhs)
+{
+    return pa << rhs.b << rhs.acceptor << rhs.v;
+}
+
+e::unpacker
+consus :: operator >> (e::unpacker up, generalized_paxos::message_p2b& rhs)
+{
+    return up >> rhs.b >> rhs.acceptor >> rhs.v;
+}
+
+size_t
+consus :: pack_size(const generalized_paxos::message_p2b& m)
+{
+    return pack_size(m.b) + pack_size(m.acceptor) + pack_size(m.v);
 }

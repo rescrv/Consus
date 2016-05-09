@@ -215,7 +215,7 @@ TEST(GeneralizedPaxos, Conflict)
     gp[1].advance(true, &send_m1, &m1, &send_m2, &m2, &send_m3, &m3);
     ASSERT_FALSE(send_m1);
     ASSERT_TRUE(send_m2);
-    ASSERT_FALSE(send_m3);
+    ASSERT_TRUE(send_m3);
 
     for (int i = 1; i <= 3; ++i)
     {
@@ -246,5 +246,5 @@ TEST(GeneralizedPaxos, Conflict)
     ASSERT_TRUE(send_m1);
     ASSERT_EQ(generalized_paxos::ballot::FAST, m1.b.type);
     ASSERT_FALSE(send_m2);
-    ASSERT_FALSE(send_m3);
+    ASSERT_TRUE(send_m3);
 }

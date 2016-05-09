@@ -1,0 +1,4 @@
+#!/usr/bin/env gremlin
+include ../5-node-3-dc-cluster.gremlin
+timeout 30
+run python ${CONSUS_SRCDIR}/test/unit/11.put-get-separate-commits.py

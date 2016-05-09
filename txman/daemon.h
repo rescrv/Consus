@@ -34,6 +34,7 @@
 #include "common/txman.h"
 #include "txman/configuration.h"
 #include "txman/durable_log.h"
+#include "txman/global_voter.h"
 #include "txman/local_voter.h"
 #include "txman/mapper.h"
 #include "txman/transaction.h"
@@ -64,12 +65,14 @@ class daemon
         struct durable_cb;
         typedef e::state_hash_table<transaction_group, transaction> transaction_map_t;
         typedef e::state_hash_table<transaction_group, local_voter> local_voter_map_t;
+        typedef e::state_hash_table<transaction_group, global_voter> global_voter_map_t;
         typedef e::nwf_hash_map<transaction_group, uint64_t, transaction_group::hash> disposition_map_t;
         typedef std::vector<durable_msg> durable_msg_heap_t;
         typedef std::vector<durable_cb> durable_cb_heap_t;
         friend class mapper;
         friend class transaction;
         friend class local_voter;
+        friend class global_voter;
 
     private:
         void loop(size_t thread);
@@ -86,6 +89,11 @@ class daemon
         void process_lv_vote_2b(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_lv_vote_learn(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_commit_record(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_gv_propose(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_gv_vote_1a(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_gv_vote_1b(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_gv_vote_2a(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_gv_vote_2b(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_kvs_rd_locked(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_kvs_rd_unlocked(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_kvs_wr_begun(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
@@ -97,6 +105,7 @@ class daemon
         transaction_id generate_txid();
         uint64_t resend_interval() { return PO6_SECONDS; }
         bool send(comm_id id, std::auto_ptr<e::buffer> msg);
+        unsigned send(paxos_group_id g, std::auto_ptr<e::buffer> msg);
         unsigned send(const paxos_group& g, std::auto_ptr<e::buffer> msg);
         void send_when_durable(const std::string& entry, comm_id id, std::auto_ptr<e::buffer> msg);
         void send_when_durable(const std::string& entry, comm_id* id, e::buffer** msg, size_t sz);
@@ -114,6 +123,7 @@ class daemon
         std::vector<e::compat::shared_ptr<po6::threads::thread> > m_threads;
         transaction_map_t m_transactions;
         local_voter_map_t m_local_voters;
+        global_voter_map_t m_global_voters;
         disposition_map_t m_dispositions;
         durable_log m_log;
 

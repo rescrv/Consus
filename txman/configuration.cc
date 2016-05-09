@@ -139,9 +139,9 @@ configuration :: is_member(paxos_group_id gid, comm_id id) const
 }
 
 bool
-configuration :: choose_groups(paxos_group_id g, std::vector<paxos_group_id>* others) const
+configuration :: choose_groups(paxos_group_id g, std::vector<paxos_group_id>* groups) const
 {
-    others->push_back(g);
+    groups->push_back(g);
     std::set<data_center_id> dcs;
     const paxos_group* gptr = get_group(g);
     assert(gptr);
@@ -151,12 +151,12 @@ configuration :: choose_groups(paxos_group_id g, std::vector<paxos_group_id>* ot
     {
         if (dcs.find(m_paxos_groups[i].dc) == dcs.end())
         {
-            others->push_back(m_paxos_groups[i].id);
+            groups->push_back(m_paxos_groups[i].id);
             dcs.insert(m_paxos_groups[i].dc);
         }
     }
 
-    return others->size() >= (m_dcs.size() / 2 + 1);
+    return groups->size() >= (m_dcs.size() / 2 + 1);
 }
 
 consus::comm_id

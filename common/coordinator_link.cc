@@ -162,6 +162,10 @@ coordinator_link :: maintain_connection()
             rc == REPLICANT_NONE_PENDING)
         {
         }
+        else if (rc == REPLICANT_COMM_FAILED)
+        {
+            // XXX
+        }
         else
         {
             LOG(ERROR) << "coordinator failure: " << replicant_client_error_message(m_repl);

@@ -21,6 +21,21 @@
 #include "txman/log_entry_t.h"
 #include "txman/transaction.h"
 
+#define UNPACK_ERROR(X) \
+    LOG(ERROR) << logid() << " failed while unpacking " << (X);
+
+#define INVARIANT_VIOLATION(X) \
+    LOG(ERROR) << logid() << " invariant violation: " << (X) << " failed";
+
+#define RETURN_IF_EXECUTED(I, S, A) \
+    do { \
+    if (m_state > EXECUTING) \
+    { \
+        LOG_IF(INFO, s_debug_mode) << logid() << ".ops[" << (I) << "]: " << (S) << " initiated " << (A) << " dropped because transaction has finished execution"; \
+        return; \
+    } \
+    } while (0)
+
 #pragma GCC diagnostic ignored "-Wlarger-than="
 
 using consus::transaction;
@@ -217,7 +232,7 @@ transaction :: paxos_2a_begin(uint64_t seqno,
 
     if (seqno != 0 || up.error() || up.remain() || !group)
     {
-        LOG_IF(INFO, s_debug_mode) << m_tg << " paxos 2a begin failed; invariants violated";
+        UNPACK_ERROR("paxos 2a::begin");
         po6::threads::mutex::hold hold(&m_mtx);
         avoid_commit_if_possible(d);
         return;
@@ -241,7 +256,7 @@ transaction :: commit_record_begin(uint64_t seqno,
 
     if (seqno != 0 || up.error() || up.remain() || !group)
     {
-        LOG_IF(INFO, s_debug_mode) << m_tg << " commit record begin failed; invariants violated";
+        UNPACK_ERROR("commit record::begin");
         avoid_commit_if_possible(d);
         return;
     }
@@ -256,23 +271,11 @@ transaction :: internal_begin(const char* source, uint64_t timestamp,
                               daemon* d)
 {
     ensure_initialized();
+    RETURN_IF_EXECUTED(0, source, "begin");
 
     if (s_debug_mode)
     {
-        LOG(INFO) << m_tg << "[0] = " << source << " initiated begin() in " << dcs.size() << " datacenters @ " << timestamp;
-
-        for (size_t i = 0; i < dcs.size(); ++i)
-        {
-            LOG(INFO) << m_tg << ".dc[" << i << "] " << dcs[i];
-        }
-
-        LOG(INFO) << m_tg << ".group " << group;
-    }
-
-    if (m_state > EXECUTING)
-    {
-        LOG_IF(INFO, s_debug_mode) << "NOP:  state > EXECUTING";
-        return;
+        LOG(INFO) << logid() << ".ops[0]: " << source << " initiated begin() in " << dcs.size() << " datacenters @ time " << timestamp;
     }
 
     operation op;
@@ -284,13 +287,21 @@ transaction :: internal_begin(const char* source, uint64_t timestamp,
         !m_ops[0].merge(op, cmp) ||
         (m_init_timestamp != 0 && m_init_timestamp != timestamp))
     {
-        LOG_IF(INFO, s_debug_mode) << m_tg << " begin failed:  invariants violated";
+        INVARIANT_VIOLATION("begin");
         avoid_commit_if_possible(d);
         return;
     }
 
     if (m_init_timestamp == 0)
     {
+        LOG(INFO) << logid() << ".transaction_group: " << m_tg;
+
+        for (size_t i = 0; i < dcs.size(); ++i)
+        {
+            LOG(INFO) << logid() << ".dc[" << i << "]: " << dcs[i]; // XXX prettify
+        }
+
+        LOG(INFO) << logid() << ".group " << group; // XXX prettify
         m_init_timestamp = timestamp;
         m_timestamp = std::max(m_timestamp, timestamp); // XXX replay
         m_group = group;
@@ -304,12 +315,9 @@ transaction :: internal_begin(const char* source, uint64_t timestamp,
 
         for (size_t i = 0; i < m_deferred_2b.size(); ++i)
         {
+            LOG_IF(INFO, s_debug_mode) << logid() << " processing delayed durable notifaction " << m_deferred_2b[i].first << "/" << m_deferred_2b[i].second;
             internal_paxos_2b(m_deferred_2b[i].first, m_deferred_2b[i].second, d);
         }
-    }
-    else if (s_debug_mode)
-    {
-        LOG(INFO) << "NOP:  already initiated";
     }
 }
 
@@ -341,7 +349,7 @@ transaction :: paxos_2a_read(uint64_t seqno,
 
     if (up.error() || up.remain())
     {
-        LOG_IF(INFO, s_debug_mode) << m_tg << " paxos 2a read failed; invariants violated";
+        UNPACK_ERROR("paxos 2a::read");
         po6::threads::mutex::hold hold(&m_mtx);
         avoid_commit_if_possible(d);
         return;
@@ -369,6 +377,7 @@ transaction :: commit_record_read(uint64_t seqno,
 
     if (up.error() || up.remain())
     {
+        UNPACK_ERROR("commit record::read");
         LOG_IF(INFO, s_debug_mode) << m_tg << " commit record read failed; invariants violated";
         m_avoid_commit_if_possible = true;
         return;
@@ -450,7 +459,7 @@ transaction :: paxos_2a_write(uint64_t seqno,
 
     if (up.error() || up.remain())
     {
-        LOG_IF(INFO, s_debug_mode) << m_tg << " paxos 2a write failed; invariants violated";
+        UNPACK_ERROR("paxos 2a::write");
         po6::threads::mutex::hold hold(&m_mtx);
         avoid_commit_if_possible(d);
         return;
@@ -478,6 +487,7 @@ transaction :: commit_record_write(uint64_t seqno,
 
     if (up.error() || up.remain())
     {
+        UNPACK_ERROR("commit record::write");
         LOG_IF(INFO, s_debug_mode) << m_tg << " commit record write failed; invariants violated";
         m_avoid_commit_if_possible = true;
         return;
@@ -535,10 +545,10 @@ transaction :: internal_write(const char* source, uint64_t seqno,
 }
 
 void
-transaction :: commit(comm_id id, uint64_t nonce, uint64_t seqno, daemon* d)
+transaction :: prepare(comm_id id, uint64_t nonce, uint64_t seqno, daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
-    internal_end_of_transaction("client", "commit", LOG_ENTRY_TX_PREPARE, seqno, d);
+    internal_end_of_transaction("client", "prepare", LOG_ENTRY_TX_PREPARE, seqno, d);
     m_ops[seqno].set_client(id, nonce);
     work_state_machine(d);
 }
@@ -551,14 +561,14 @@ transaction :: paxos_2a_prepare(uint64_t seqno,
 {
     if (up.error() || up.remain())
     {
-        LOG_IF(INFO, s_debug_mode) << m_tg << " paxos 2a commit failed; invariants violated";
+        UNPACK_ERROR("paxos 2a::prepare");
         po6::threads::mutex::hold hold(&m_mtx);
         avoid_commit_if_possible(d);
         return;
     }
 
     po6::threads::mutex::hold hold(&m_mtx);
-    internal_end_of_transaction("paxos 2a", "commit", LOG_ENTRY_TX_PREPARE, seqno, d);
+    internal_end_of_transaction("paxos 2a", "prepare", LOG_ENTRY_TX_PREPARE, seqno, d);
     work_state_machine(d);
 }
 
@@ -570,12 +580,12 @@ transaction :: commit_record_prepare(uint64_t seqno,
 {
     if (up.error() || up.remain())
     {
-        LOG_IF(INFO, s_debug_mode) << m_tg << " commit record commit failed; invariants violated";
+        UNPACK_ERROR("commit record::prepare");
         avoid_commit_if_possible(d);
         return;
     }
 
-    internal_end_of_transaction("commit record", "commit", LOG_ENTRY_TX_PREPARE, seqno, d);
+    internal_end_of_transaction("commit record", "prepare", LOG_ENTRY_TX_PREPARE, seqno, d);
     work_state_machine(d);
 }
 
@@ -596,7 +606,7 @@ transaction :: paxos_2a_abort(uint64_t seqno,
 {
     if (up.error() || up.remain())
     {
-        LOG_IF(INFO, s_debug_mode) << m_tg << " paxos 2a abort failed; invariants violated";
+        UNPACK_ERROR("paxos 2a::abort");
         po6::threads::mutex::hold hold(&m_mtx);
         avoid_commit_if_possible(d);
         return;
@@ -611,16 +621,11 @@ void
 transaction :: internal_end_of_transaction(const char* source, const char* func, log_entry_t let, uint64_t seqno, daemon* d)
 {
     ensure_initialized();
+    RETURN_IF_EXECUTED(seqno, source, func);
 
     if (s_debug_mode)
     {
-        LOG(INFO) << m_tg << "[" << seqno << "] = " << source << " initiated " << func << "()";
-    }
-
-    if (m_state > EXECUTING)
-    {
-        LOG_IF(INFO, s_debug_mode) << "NOP:  state > EXECUTING";
-        return;
+        LOG(INFO) << logid() << ".ops[" << seqno << "]: " << source << " initiated " << func << "()";
     }
 
     operation op;
@@ -631,7 +636,7 @@ transaction :: internal_end_of_transaction(const char* source, const char* func,
     if (!resize_to_hold(seqno) ||
         !m_ops[seqno].merge(op, cmp))
     {
-        LOG_IF(INFO, s_debug_mode) << m_tg << " " << func << " failed; invariants violated";
+        INVARIANT_VIOLATION(func);
         avoid_commit_if_possible(d);
         return;
     }
@@ -682,9 +687,10 @@ transaction :: internal_paxos_2b(comm_id id, uint64_t seqno, daemon* d)
 {
     ensure_initialized();
 
-    if (m_state > EXECUTING)
+    if (m_init_timestamp == 0)
     {
-        LOG_IF(INFO, s_debug_mode) << m_tg << "[" << seqno << "] paxos 2b dropped: state > EXECUTING";
+        m_deferred_2b.push_back(std::make_pair(id, seqno));
+        LOG_IF(INFO, s_debug_mode) << logid() << ".ops[" << seqno << "]: durable notification deferred until begin() action received";
         return;
     }
 
@@ -692,38 +698,39 @@ transaction :: internal_paxos_2b(comm_id id, uint64_t seqno, daemon* d)
 
     if (idx >= m_group.members_sz)
     {
-        if (m_init_timestamp == 0)
-        {
-            m_deferred_2b.push_back(std::make_pair(id, seqno));
-            LOG_IF(INFO, s_debug_mode) << m_tg << "[" << seqno << "] paxos 2b deferred until transaction begins";
-        }
-        else
-        {
-            LOG(ERROR) << "paxos phase2b failed: " << id << " not a member of " << m_group.id;
-        }
-
+        LOG(ERROR) << logid() << ".ops[" << seqno << "]: " << id << " is misrepresenting itself as a member of " << m_group.id;
         return;
     }
 
     if (!resize_to_hold(seqno))
     {
-        LOG_IF(INFO, s_debug_mode) << m_tg << "[" << seqno << "] paxos 2b failed: cannot resize to hold sequence number";
+        INVARIANT_VIOLATION("durable notification");
         avoid_commit_if_possible(d);
         return;
     }
 
+    bool already_durable = m_ops[seqno].durable[idx];
     m_ops[seqno].durable[idx] = true;
 
-    if (s_debug_mode)
+    if (!already_durable && s_debug_mode)
     {
         if (d->m_us.id == id)
         {
-            LOG(INFO) << m_tg << "[" << seqno << "] durable on this server";
+            LOG_IF(INFO, s_debug_mode) << logid() << ".ops[" << seqno << "]: durable notification from this server";
         }
         else
         {
-            LOG(INFO) << m_tg << "[" << seqno << "] durable on " << id;
+            LOG_IF(INFO, s_debug_mode) << logid() << ".ops[" << seqno << "]: durable notification from " << id;
         }
+
+        std::ostringstream ostr;
+
+        for (size_t i = 0; i < m_group.members_sz; ++i)
+        {
+            ostr << (m_ops[seqno].durable[i] ? "1" : "0");
+        }
+
+        LOG_IF(INFO, s_debug_mode) << logid() << ".ops[" << seqno << "]: durability across group: " << ostr.str();
     }
 }
 
@@ -905,6 +912,12 @@ transaction :: kvs_wr_finished(uint64_t seqno, daemon* d)
     work_state_machine(d);
 }
 
+std::string
+transaction :: logid()
+{
+    return transaction_group::log(m_tg);
+}
+
 void
 transaction :: ensure_initialized()
 {
@@ -994,7 +1007,7 @@ transaction :: work_state_machine_executing(daemon* d)
         (m_ops.back().type == LOG_ENTRY_TX_PREPARE ||
          m_ops.back().type == LOG_ENTRY_TX_ABORT))
     {
-        LOG_IF(INFO, s_debug_mode) << m_tg << " transitioning to LOCAL_COMMIT_VOTE state";
+        LOG_IF(INFO, s_debug_mode) << logid() << " finished execuing all operations; transitioning to DATA CENTER VOTE state";
         m_state = LOCAL_COMMIT_VOTE;
         return work_state_machine(d);
     }
@@ -1031,13 +1044,13 @@ transaction :: work_state_machine_local_commit_vote(daemon* d)
     {
         if (single_dc)
         {
-            LOG_IF(INFO, s_debug_mode) << m_tg << " local vote chose COMMIT; transitioning to COMMITTED state";
+            LOG_IF(INFO, s_debug_mode) << logid() << " data center vote chose COMMIT; transitioning to COMMITTED state";
             m_state = COMMITTED;
             record_commit(d);
         }
         else
         {
-            LOG_IF(INFO, s_debug_mode) << m_tg << " local vote chose COMMIT; turning to global vote";
+            LOG_IF(INFO, s_debug_mode) << logid() << " data center vote chose COMMIT; transitioning to GLOBAL VOTE state";
             m_state = GLOBAL_COMMIT_VOTE;
         }
     }
@@ -1046,19 +1059,19 @@ transaction :: work_state_machine_local_commit_vote(daemon* d)
         // if single dc or only aborting in originating data center
         if (single_dc || m_tg.group == m_tg.txid.group)
         {
-            LOG_IF(INFO, s_debug_mode) << m_tg << " local vote chose ABORT; transitioning to ABORTED state";
+            LOG_IF(INFO, s_debug_mode) << logid() << " data center vote chose ABORT; transitioning to ABORTED state";
             m_state = ABORTED;
             record_abort(d);
         }
         else
         {
-            LOG_IF(INFO, s_debug_mode) << m_tg << " local vote chose ABORT; turning to global vote";
+            LOG_IF(INFO, s_debug_mode) << logid() << " data center vote chose ABORT; transitioning to GLOBAL VOTE state";
             m_state = GLOBAL_COMMIT_VOTE;
         }
     }
     else
     {
-        LOG(ERROR) << m_tg << " local commit failed; invariants violated";
+        LOG(ERROR) << logid() << " data center commit failed; invariants violated";
         return;
     }
 
@@ -1114,43 +1127,46 @@ transaction :: work_state_machine_global_commit_vote(daemon* d)
         }
     }
 
+    daemon::global_voter_map_t::state_reference gvsr;
+    global_voter* gv = d->m_global_voters.get_or_create_state(m_tg, &gvsr);
+
+    if (!gv->initialized())
+    {
+        daemon::local_voter_map_t::state_reference lvsr;
+        local_voter* lv = d->m_local_voters.get_or_create_state(m_tg, &lvsr);
+        assert(lv);
+        uint64_t v = lv->outcome();
+        gv->init(v, m_dcs, m_dcs_sz, d);
+    }
+
+    gv->externally_work_state_machine(d);
+    uint64_t outcome;
+
+    if (!gv->outcome(&outcome))
+    {
+        return;
+    }
+
+    if (outcome == CONSUS_VOTE_COMMIT)
+    {
+        LOG_IF(INFO, s_debug_mode) << logid() << " global vote chose COMMIT; transitioning to COMMITTED state";
+        m_state = COMMITTED;
+        record_commit(d);
+    }
+    else if (outcome == CONSUS_VOTE_ABORT)
+    {
+        LOG_IF(INFO, s_debug_mode) << logid() << " global vote chose ABORT; transitioning to ABORTED state";
+        m_state = ABORTED;
+        record_abort(d);
+    }
+    else
+    {
+        LOG(ERROR) << m_tg << " global commit failed; invariants violated";
+        return;
+    }
+
+    return work_state_machine(d);
 }
-
-#if 0
-void
-transaction :: work_state_machine_sharing(daemon* d)
-{
-    unsigned voted = 0;
-    unsigned committed = 0;
-    const unsigned quorum = m_dcs_sz / 2 + 1;
-
-    if (m_dcs_sz == 1)//XXX
-    {
-        voted = 1;
-        committed = 1;
-    }
-
-    assert(voted <= m_dcs_sz);
-    assert(committed <= voted);
-    unsigned aborted = voted - committed;
-
-    if (aborted >= quorum)
-    {
-        send_tx_abort(d);
-        LOG_IF(INFO, s_debug_mode) << m_tg << " aborted; transitioning to TEARDOWN state";
-        m_state = TEARDOWN;
-        return work_state_machine(d);
-    }
-
-    if (committed >= quorum)
-    {
-        send_tx_commit(d);
-        LOG_IF(INFO, s_debug_mode) << m_tg << " committed; transitioning to TEARDOWN state";
-        m_state = TEARDOWN;
-        return work_state_machine(d);
-    }
-}
-#endif
 
 void
 transaction :: work_state_machine_committed(daemon* d)
@@ -1185,7 +1201,7 @@ transaction :: work_state_machine_committed(daemon* d)
     if (done == non_nop)
     {
         send_tx_commit(d);
-        LOG_IF(INFO, s_debug_mode) << m_tg << " transitioning to TERMINATED state";
+        LOG_IF(INFO, s_debug_mode) << logid() << " transitioning to TERMINATED state";
         m_state = TERMINATED;
         return work_state_machine(d);
     }
@@ -1224,7 +1240,7 @@ transaction :: work_state_machine_aborted(daemon* d)
     if (done == non_nop)
     {
         send_tx_abort(d);
-        LOG_IF(INFO, s_debug_mode) << m_tg << " transitioning to TERMINATED state";
+        LOG_IF(INFO, s_debug_mode) << logid() << " transitioning to TERMINATED state";
         m_state = TERMINATED;
         return work_state_machine(d);
     }
@@ -1264,8 +1280,6 @@ transaction :: is_durable(uint64_t seqno)
 bool
 transaction :: resize_to_hold(uint64_t seqno)
 {
-    assert(m_state == EXECUTING);
-
     for (size_t i = 0; i < m_ops.size(); ++i)
     {
         if (m_ops[i].type != LOG_ENTRY_NOP &&
@@ -1276,9 +1290,13 @@ transaction :: resize_to_hold(uint64_t seqno)
         }
     }
 
-    if (m_ops.size() <= seqno)
+    if (m_ops.size() <= seqno && m_state == EXECUTING)
     {
         m_ops.resize(seqno + 1);
+    }
+    else if (m_ops.size() <= seqno && m_state > EXECUTING)
+    {
+        return false;
     }
 
     return true;

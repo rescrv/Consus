@@ -30,6 +30,11 @@ consus :: operator << (std::ostream& lhs, network_msgtype rhs)
         STRINGIFY(LV_VOTE_2B);
         STRINGIFY(LV_VOTE_LEARN);
         STRINGIFY(COMMIT_RECORD);
+        STRINGIFY(GV_PROPOSE);
+        STRINGIFY(GV_VOTE_1A);
+        STRINGIFY(GV_VOTE_1B);
+        STRINGIFY(GV_VOTE_2A);
+        STRINGIFY(GV_VOTE_2B);
         STRINGIFY(KVS_RD_LOCK);
         STRINGIFY(KVS_RD_LOCKED);
         STRINGIFY(KVS_RD_UNLOCK);

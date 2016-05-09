@@ -313,7 +313,7 @@ generalized_paxos_state_machine :: acceptor(state_machine* sm, abstract_id id)
 
         bool may_attempt_leadership = id == abstract_id(1);
 
-        if (nrand48(randbuf) < (1LL << 22))
+        if (nrand48(randbuf) < (1LL << 10))
         {
             may_attempt_leadership = true;
         }

@@ -1,6 +1,14 @@
 // Copyright (c) 2015, Robert Escriva
 // All rights reserved.
 
+// C
+#include <stdlib.h>
+
+// e
+#include <e/base64.h>
+#include <e/endian.h>
+#include <e/varint.h>
+
 // consus
 #include "common/transaction_group.h"
 
@@ -39,6 +47,20 @@ transaction_group :: hash() const
 {
     e::compat::hash<uint64_t> h;
     return h(group.get()) ^ txid.hash();
+}
+
+std::string
+transaction_group :: log(const transaction_group& tg)
+{
+    unsigned char buf[sizeof(uint64_t) + 2 * VARINT_64_MAX_SIZE];
+    unsigned char* ptr = buf;
+    ptr = e::pack64be(tg.txid.number, ptr);
+    ptr = e::packvarint64(tg.txid.group.get(), ptr);
+    ptr = e::packvarint64(tg.group.get(), ptr);
+    char b64[2 * sizeof(buf)];
+    size_t sz = e::b64_ntop(buf, ptr - buf, b64, sizeof(b64));
+    assert(sz <= sizeof(b64));
+    return std::string(b64, sz);
 }
 
 bool
