@@ -98,6 +98,7 @@ global_voter :: global_voter(const transaction_group& tg)
     , m_outcome_in_dispositions(false)
     , m_data_center_cmp(new data_center_comparator(m_global_cmp.get()))
     , m_data_center_gp()
+    , m_highest_log_entry(0)
     , m_rate_vote_timestamp(0)
     , m_outer_rate_m1a()
     , m_outer_rate_m1a_timestamp(0)
@@ -219,6 +220,11 @@ global_voter :: propose(const generalized_paxos::command& c, daemon* d)
 
     if (proposed)
     {
+        std::string entry;
+        e::packer(&entry)
+            << LOG_ENTRY_GLOBAL_PROPOSE << m_tg << c;
+        int64_t id = d->m_log.append(entry.data(), entry.size());
+        m_highest_log_entry = std::max(m_highest_log_entry, id);
         work_state_machine(d);
     }
 
@@ -243,6 +249,15 @@ global_voter :: process_p1a(comm_id id, const generalized_paxos::message_p1a& m,
         return m_has_outcome;
     }
 
+    if (m.b > m_data_center_gp.acceptor_ballot())
+    {
+        std::string entry;
+        e::packer(&entry)
+            << LOG_ENTRY_GLOBAL_VOTE_1A << m_tg << m;
+        int64_t x = d->m_log.append(entry.data(), entry.size());
+        m_highest_log_entry = std::max(m_highest_log_entry, x);
+    }
+
     m_data_center_gp.process_p1a(m, &send, &r);
 
     if (send)
@@ -254,7 +269,7 @@ global_voter :: process_p1a(comm_id id, const generalized_paxos::message_p1a& m,
                         + pack_size(r);
         std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
         msg->pack_at(BUSYBEE_HEADER_SIZE) << GV_VOTE_1B << m_tg << r;
-        d->send(id, msg);
+        d->send_when_durable(m_highest_log_entry, id, msg);
     }
     else
     {
@@ -307,6 +322,15 @@ global_voter :: process_p2a(comm_id id, const generalized_paxos::message_p2a& m,
     m_data_center_gp.process_p2a(m, &send, &r);
     const uint64_t now = po6::monotonic_time();
 
+    if (send && m_outer_rate_m2b != r)
+    {
+        std::string entry;
+        e::packer(&entry)
+            << LOG_ENTRY_GLOBAL_VOTE_2A << m_tg << m;
+        int64_t x = d->m_log.append(entry.data(), entry.size());
+        m_highest_log_entry = std::max(m_highest_log_entry, x);
+    }
+
     if (send &&
         (m_outer_rate_m2b != r ||
          m_outer_rate_m2b_timestamp + d->resend_interval() < now))
@@ -318,7 +342,7 @@ global_voter :: process_p2a(comm_id id, const generalized_paxos::message_p2a& m,
                         + pack_size(r);
         std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
         msg->pack_at(BUSYBEE_HEADER_SIZE) << GV_VOTE_2B << m_tg << r;
-        d->send(m_tg.group, msg);
+        d->send_when_durable(m_highest_log_entry, m_tg.group, msg);
         m_outer_rate_m2b = r;
         m_outer_rate_m2b_timestamp = now;
     }
@@ -345,6 +369,11 @@ global_voter :: process_p2b(const generalized_paxos::message_p2b& m, daemon* d)
 
     if (processed)
     {
+        std::string entry;
+        e::packer(&entry)
+            << LOG_ENTRY_GLOBAL_VOTE_2B << m_tg << m;
+        int64_t x = d->m_log.append(entry.data(), entry.size());
+        m_highest_log_entry = std::max(m_highest_log_entry, x);
         LOG_IF(INFO, s_debug_mode) << logid() << pretty_print_outer(m.v) << " accepted by " << comm_id(m.acceptor.get());
         work_state_machine(d);
     }
@@ -600,7 +629,7 @@ global_voter :: work_state_machine(daemon* d)
                         + pack_size(m1);
         std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
         msg->pack_at(BUSYBEE_HEADER_SIZE) << GV_VOTE_1A << m_tg << m1;
-        d->send(m_tg.group, msg);
+        d->send_when_durable(m_highest_log_entry, m_tg.group, msg);
         m_outer_rate_m1a = m1;
         m_outer_rate_m1a_timestamp = now;
     }
@@ -616,7 +645,7 @@ global_voter :: work_state_machine(daemon* d)
                         + pack_size(m2);
         std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
         msg->pack_at(BUSYBEE_HEADER_SIZE) << GV_VOTE_2A << m_tg << m2;
-        d->send(m_tg.group, msg);
+        d->send_when_durable(m_highest_log_entry, m_tg.group, msg);
         m_outer_rate_m2a = m2;
         m_outer_rate_m2a_timestamp = now;
     }
@@ -632,7 +661,7 @@ global_voter :: work_state_machine(daemon* d)
                         + pack_size(m3);
         std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
         msg->pack_at(BUSYBEE_HEADER_SIZE) << GV_VOTE_2B << m_tg << m3;
-        d->send(m_tg.group, msg);
+        d->send_when_durable(m_highest_log_entry, m_tg.group, msg);
         m_outer_rate_m2b = m3;
         m_outer_rate_m2b_timestamp = now;
     }
@@ -908,7 +937,7 @@ global_voter :: propose_global(const generalized_paxos::command& c, daemon* d)
                         + pack_size(c);
         std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
         msg->pack_at(BUSYBEE_HEADER_SIZE) << GV_PROPOSE << tg << c;
-        d->send(m_dcs[i], msg);
+        d->send_when_durable(m_highest_log_entry, m_dcs[i], msg);
     }
 
     return true;

@@ -667,6 +667,10 @@ transaction :: paxos_2a(uint64_t seqno,
         case LOG_ENTRY_LOCAL_VOTE_1A:
         case LOG_ENTRY_LOCAL_VOTE_2A:
         case LOG_ENTRY_LOCAL_LEARN:
+        case LOG_ENTRY_GLOBAL_PROPOSE:
+        case LOG_ENTRY_GLOBAL_VOTE_1A:
+        case LOG_ENTRY_GLOBAL_VOTE_2A:
+        case LOG_ENTRY_GLOBAL_VOTE_2B:
         case LOG_ENTRY_CONFIG:
         case LOG_ENTRY_NOP:
         default:
@@ -791,6 +795,10 @@ transaction :: commit_record(e::slice commit_record, std::auto_ptr<e::buffer> _b
             case LOG_ENTRY_LOCAL_VOTE_1A:
             case LOG_ENTRY_LOCAL_VOTE_2A:
             case LOG_ENTRY_LOCAL_LEARN:
+            case LOG_ENTRY_GLOBAL_PROPOSE:
+            case LOG_ENTRY_GLOBAL_VOTE_1A:
+            case LOG_ENTRY_GLOBAL_VOTE_2A:
+            case LOG_ENTRY_GLOBAL_VOTE_2B:
             case LOG_ENTRY_NOP:
             default:
                 LOG(ERROR) << "commit record has " << type << " entry";
@@ -1464,6 +1472,10 @@ transaction :: generate_log_entry(uint64_t seqno)
         case LOG_ENTRY_LOCAL_VOTE_1A:
         case LOG_ENTRY_LOCAL_VOTE_2A:
         case LOG_ENTRY_LOCAL_LEARN:
+        case LOG_ENTRY_GLOBAL_PROPOSE:
+        case LOG_ENTRY_GLOBAL_VOTE_1A:
+        case LOG_ENTRY_GLOBAL_VOTE_2A:
+        case LOG_ENTRY_GLOBAL_VOTE_2B:
         case LOG_ENTRY_CONFIG:
         case LOG_ENTRY_NOP:
         default:
@@ -1529,10 +1541,14 @@ transaction :: send_response(operation* op, daemon* d)
         case LOG_ENTRY_LOCAL_VOTE_1A:
         case LOG_ENTRY_LOCAL_VOTE_2A:
         case LOG_ENTRY_LOCAL_LEARN:
+        case LOG_ENTRY_GLOBAL_PROPOSE:
+        case LOG_ENTRY_GLOBAL_VOTE_1A:
+        case LOG_ENTRY_GLOBAL_VOTE_2A:
+        case LOG_ENTRY_GLOBAL_VOTE_2B:
         case LOG_ENTRY_CONFIG:
         case LOG_ENTRY_NOP:
         default:
-            LOG(ERROR) << "sending client response for " << op->type;
+            LOG(ERROR) << "trying to send client response for " << op->type;
             return;
     }
 }

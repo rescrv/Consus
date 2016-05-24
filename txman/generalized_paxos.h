@@ -142,6 +142,7 @@ class generalized_paxos
                      bool* send_m3, message_p2b* m3);
 
         // react to messages
+        ballot acceptor_ballot() const { return m_acceptor_ballot; }
         void process_p1a(const message_p1a& m, bool* send, message_p1b* r);
         bool process_p1b(const message_p1b& m);
         void process_p2a(const message_p2a& m, bool* send, message_p2b* r);

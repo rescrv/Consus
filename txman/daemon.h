@@ -108,7 +108,10 @@ class daemon
         unsigned send(paxos_group_id g, std::auto_ptr<e::buffer> msg);
         unsigned send(const paxos_group& g, std::auto_ptr<e::buffer> msg);
         void send_when_durable(const std::string& entry, comm_id id, std::auto_ptr<e::buffer> msg);
-        void send_when_durable(const std::string& entry, comm_id* id, e::buffer** msg, size_t sz);
+        void send_when_durable(const std::string& entry, const comm_id* ids, e::buffer** msgs, size_t sz);
+        void send_when_durable(int64_t idx, paxos_group_id g, std::auto_ptr<e::buffer> msg);
+        void send_when_durable(int64_t idx, comm_id id, std::auto_ptr<e::buffer> msg);
+        void send_when_durable(int64_t idx, const comm_id* ids, e::buffer** msgs, size_t sz);
         void callback_when_durable(const std::string& entry, const transaction_group& tg, uint64_t seqno);
         void durable();
 

@@ -1245,12 +1245,50 @@ daemon :: send_when_durable(const std::string& entry, comm_id id, std::auto_ptr<
 }
 
 void
-daemon :: send_when_durable(const std::string& entry, comm_id* ids, e::buffer** msgs, size_t sz)
+daemon :: send_when_durable(const std::string& entry, const comm_id* ids, e::buffer** msgs, size_t sz)
 {
     int64_t x = m_log.append(entry.data(), entry.size());
+    send_when_durable(x, ids, msgs, sz);
+}
 
-    if (x < 0)
+void
+daemon :: send_when_durable(int64_t idx, paxos_group_id g, std::auto_ptr<e::buffer> msg)
+{
+    const paxos_group* group = get_config()->get_group(g);
+
+    if (!group || group->members_sz <= 0)
     {
+        return;
+    }
+
+    e::buffer* msgs[CONSUS_MAX_REPLICATION_FACTOR];
+    msgs[0] = msg.release();
+
+    for (size_t i = 1; i < group->members_sz; ++i)
+    {
+        msgs[i] = msgs[0]->copy();
+    }
+
+    send_when_durable(idx, group->members, msgs, group->members_sz);
+}
+
+void
+daemon :: send_when_durable(int64_t idx, comm_id id, std::auto_ptr<e::buffer> msg)
+{
+    e::buffer* m = msg.release();
+    send_when_durable(idx, &id, &m, 1);
+}
+
+void
+daemon :: send_when_durable(int64_t idx, const comm_id* ids, e::buffer** msgs, size_t sz)
+{
+    if (idx < 0)
+    {
+        for (size_t i = 0; i < sz; ++i)
+        {
+            delete msgs[i];
+        }
+
         return;
     }
 
@@ -1258,11 +1296,11 @@ daemon :: send_when_durable(const std::string& entry, comm_id* ids, e::buffer** 
 
     {
         po6::threads::mutex::hold hold(&m_durable_mtx);
-        wake = x <= m_durable_up_to;
+        wake = idx <= m_durable_up_to;
 
         for (size_t i = 0; i < sz; ++i)
         {
-            durable_msg d(x, ids[i], msgs[i]);
+            durable_msg d(idx, ids[i], msgs[i]);
             m_durable_msgs.push_back(d);
             std::push_heap(m_durable_msgs.begin(), m_durable_msgs.end());
         }
@@ -1342,6 +1380,8 @@ daemon :: durable()
 
         if (m_log.error() != 0)
         {
+            LOG(ERROR) << "durable log: " << po6::strerror(m_log.error());
+            e::atomic::increment_32_nobarrier(&s_interrupts, 2);
             break;
         }
 

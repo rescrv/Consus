@@ -21,3 +21,4 @@ List of major "TODO" items left:
 - add assert to ensure learned cstruct never goes lower
 - every txman operation should check outcome in dispositions and react
   appropriately
+- configuration serial/de-serial

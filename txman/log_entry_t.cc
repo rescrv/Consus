@@ -21,6 +21,10 @@ consus :: is_paxos_2a_log_entry(log_entry_t t)
         case LOG_ENTRY_LOCAL_VOTE_1A:
         case LOG_ENTRY_LOCAL_VOTE_2A:
         case LOG_ENTRY_LOCAL_LEARN:
+        case LOG_ENTRY_GLOBAL_PROPOSE:
+        case LOG_ENTRY_GLOBAL_VOTE_1A:
+        case LOG_ENTRY_GLOBAL_VOTE_2A:
+        case LOG_ENTRY_GLOBAL_VOTE_2B:
         case LOG_ENTRY_CONFIG:
         case LOG_ENTRY_NOP:
         default:
@@ -42,6 +46,10 @@ consus :: operator << (std::ostream& lhs, const log_entry_t& rhs)
         STRINGIFY(LOG_ENTRY_LOCAL_VOTE_1A);
         STRINGIFY(LOG_ENTRY_LOCAL_VOTE_2A);
         STRINGIFY(LOG_ENTRY_LOCAL_LEARN);
+        STRINGIFY(LOG_ENTRY_GLOBAL_PROPOSE);
+        STRINGIFY(LOG_ENTRY_GLOBAL_VOTE_1A);
+        STRINGIFY(LOG_ENTRY_GLOBAL_VOTE_2A);
+        STRINGIFY(LOG_ENTRY_GLOBAL_VOTE_2B);
         STRINGIFY(LOG_ENTRY_NOP);
         default:
             lhs << "unknown LOG_ENTRY";
