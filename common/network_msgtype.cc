@@ -17,6 +17,9 @@ consus :: operator << (std::ostream& lhs, network_msgtype rhs)
     switch (rhs)
     {
         STRINGIFY(CLIENT_RESPONSE);
+        STRINGIFY(UNSAFE_READ);
+        STRINGIFY(UNSAFE_WRITE);
+        STRINGIFY(UNSAFE_LOCK_OP);
         STRINGIFY(TXMAN_BEGIN);
         STRINGIFY(TXMAN_READ);
         STRINGIFY(TXMAN_WRITE);
@@ -35,15 +38,20 @@ consus :: operator << (std::ostream& lhs, network_msgtype rhs)
         STRINGIFY(GV_VOTE_1B);
         STRINGIFY(GV_VOTE_2A);
         STRINGIFY(GV_VOTE_2B);
-        STRINGIFY(KVS_RD_LOCK);
-        STRINGIFY(KVS_RD_LOCKED);
-        STRINGIFY(KVS_RD_UNLOCK);
-        STRINGIFY(KVS_RD_UNLOCKED);
-        STRINGIFY(KVS_WR_BEGIN);
-        STRINGIFY(KVS_WR_BEGUN);
-        STRINGIFY(KVS_WR_FINISH);
-        STRINGIFY(KVS_WR_CANCEL);
-        STRINGIFY(KVS_WR_FINISHED);
+        STRINGIFY(KVS_REP_RD);
+        STRINGIFY(KVS_REP_RD_RESP);
+        STRINGIFY(KVS_REP_WR);
+        STRINGIFY(KVS_REP_WR_RESP);
+        STRINGIFY(KVS_RAW_RD);
+        STRINGIFY(KVS_RAW_RD_RESP);
+        STRINGIFY(KVS_RAW_WR);
+        STRINGIFY(KVS_RAW_WR_RESP);
+        STRINGIFY(KVS_LOCK_OP);
+        STRINGIFY(KVS_LOCK_OP_RESP);
+        STRINGIFY(KVS_RAW_LK);
+        STRINGIFY(KVS_RAW_LK_RESP);
+        STRINGIFY(KVS_MIGRATE_SYN);
+        STRINGIFY(KVS_MIGRATE_ACK);
         STRINGIFY(CONSUS_NOP);
         default:
             lhs << "unknown msgtype";

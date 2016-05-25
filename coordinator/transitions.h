@@ -40,6 +40,7 @@ TRANSITION(txman_offline);
 TRANSITION(kvs_register);
 TRANSITION(kvs_online);
 TRANSITION(kvs_offline);
+TRANSITION(kvs_migrated);
 
 TRANSITION(tick);
 

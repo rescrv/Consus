@@ -33,3 +33,10 @@ server_selector :: next()
 
     return m_ids[m_consumed_idx++];
 }
+
+void
+server_selector :: clear()
+{
+    m_ids.clear();
+    m_consumed_idx = 0;
+}

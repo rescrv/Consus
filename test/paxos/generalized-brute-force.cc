@@ -175,7 +175,7 @@ generalized_paxos_state_machine :: generalized_paxos_state_machine(state_machine
 
     for (unsigned i = 0; i < acceptors; ++i)
     {
-        m_acceptors[i].reset(new po6::threads::thread(po6::threads::make_thread_wrapper(&generalized_paxos_state_machine::acceptor, this, sm[i], abstract_id(i + 1))));
+        m_acceptors[i].reset(new po6::threads::thread(po6::threads::make_obj_func(&generalized_paxos_state_machine::acceptor, this, sm[i], abstract_id(i + 1))));
         m_acceptors[i]->start();
     }
 }

@@ -30,6 +30,7 @@ class configuration
     // transaction managers
     public:
         bool exists(comm_id id) const;
+        data_center_id get_data_center(comm_id id) const;
         po6::net::location get_address(comm_id id) const;
         txman_state::state_t get_state(comm_id id) const;
 

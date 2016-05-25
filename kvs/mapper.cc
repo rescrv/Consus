@@ -20,10 +20,11 @@ bool
 mapper :: lookup(uint64_t server_id, po6::net::location* bound_to)
 {
     po6::net::location loc;
+    configuration* c = m_d->get_config();
 
-    if (m_d->m_config->exists(comm_id(server_id)))
+    if (c && c->exists(comm_id(server_id)))
     {
-        *bound_to = m_d->m_config->get_address(comm_id(server_id));
+        *bound_to = c->get_address(comm_id(server_id));
         return true;
     }
 

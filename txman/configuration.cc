@@ -47,6 +47,28 @@ configuration :: exists(comm_id id) const
     return false;
 }
 
+consus::data_center_id
+configuration :: get_data_center(comm_id id) const
+{
+    for (size_t i = 0; i < m_txmans.size(); ++i)
+    {
+        if (m_txmans[i].tx.id == id)
+        {
+            return m_txmans[i].tx.dc;
+        }
+    }
+
+    for (size_t i = 0; i < m_kvss.size(); ++i)
+    {
+        if (m_kvss[i].id == id)
+        {
+            return m_kvss[i].dc;
+        }
+    }
+
+    return data_center_id();
+}
+
 po6::net::location
 configuration :: get_address(comm_id id) const
 {

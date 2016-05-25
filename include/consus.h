@@ -18,8 +18,9 @@ extern "C"
 enum consus_returncode
 {
     CONSUS_SUCCESS      = 6656,
-    CONSUS_NOT_FOUND    = 6657,
-    CONSUS_ABORTED      = 6658,
+    CONSUS_LESS_DURABLE = 6657,
+    CONSUS_NOT_FOUND    = 6658,
+    CONSUS_ABORTED      = 6659,
 
     /* persistent/programmatic errors */
     CONSUS_UNKNOWN_TABLE    = 6720,

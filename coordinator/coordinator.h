@@ -17,6 +17,7 @@
 #include "common/kvs.h"
 #include "common/kvs_state.h"
 #include "common/paxos_group.h"
+#include "common/ring.h"
 #include "common/txman.h"
 #include "common/txman_state.h"
 
@@ -56,6 +57,7 @@ class coordinator
         void kvs_register(rsm_context* ctx, const kvs& t);
         void kvs_online(rsm_context* ctx, comm_id id, const po6::net::location& bind_to, uint64_t nonce);
         void kvs_offline(rsm_context* ctx, comm_id id, const po6::net::location& bind_to, uint64_t nonce);
+        void kvs_migrated(rsm_context* ctx, partition_id part);
 
     // maintenance
     public:
@@ -74,6 +76,9 @@ class coordinator
         void txman_availability_changed();
         void kvs_availability_changed();
         void regenerate_paxos_groups(rsm_context* ctx);
+        ring* get_or_create_ring(data_center_id id);
+        void maintain_kvs_rings(rsm_context* ctx);
+        bool finish_migrations(rsm_context* ctx);
 
     private:
         // meta state
@@ -94,6 +99,9 @@ class coordinator
         std::vector<kvs_state> m_kvss;
         unsigned m_kvs_quiescence_counter;
         bool m_kvss_changed;
+        // rings
+        std::vector<ring> m_rings;
+        std::vector<partition_id> m_migrated;
 
     private:
         coordinator(const coordinator&);

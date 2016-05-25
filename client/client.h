@@ -46,6 +46,20 @@ class client
         int64_t wait(int64_t id, int timeout, consus_returncode* status);
         int64_t begin_transaction(consus_returncode* status,
                                   consus_transaction** xact);
+        int64_t unsafe_get(const char* table,
+                           const char* key, size_t key_sz,
+                           consus_returncode* status,
+                           char** value, size_t* value_sz);
+        int64_t unsafe_put(const char* table,
+                           const char* key, size_t key_sz,
+                           const char* value, size_t value_sz,
+                           consus_returncode* status);
+        int64_t unsafe_lock(const char* table,
+                            const char* key, size_t key_sz,
+                            consus_returncode* status);
+        int64_t unsafe_unlock(const char* table,
+                              const char* key, size_t key_sz,
+                              consus_returncode* status);
         // admin API
         int create_data_center(const char* name, consus_returncode* status);
         int set_default_data_center(const char* name, consus_returncode* status);

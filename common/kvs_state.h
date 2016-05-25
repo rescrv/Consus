@@ -20,7 +20,8 @@ class kvs_state
         {
             REGISTERED  = 1,
             ONLINE      = 2,
-            OFFLINE     = 3
+            OFFLINE     = 3,
+            RETIRING    = 4
         };
         static const char* to_string(state_t state);
 

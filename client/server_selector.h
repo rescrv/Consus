@@ -22,6 +22,7 @@ class server_selector
     public:
         void set(const comm_id* ids, size_t ids_sz);
         comm_id next();
+        void clear();
 
     private:
         std::vector<comm_id> m_ids;

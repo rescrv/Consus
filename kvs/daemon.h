@@ -18,16 +18,22 @@
 // e
 #include <e/compat.h>
 #include <e/garbage_collector.h>
+#include <e/state_hash_table.h>
 
 // BusyBee
 #include <busybee_mta.h>
 
 // consus
 #include "namespace.h"
+#include "common/constants.h"
 #include "common/coordinator_link.h"
 #include "common/kvs.h"
 #include "kvs/configuration.h"
+#include "kvs/datalayer.h"
 #include "kvs/mapper.h"
+#include "kvs/migrator.h"
+#include "kvs/read_replicator.h"
+#include "kvs/write_replicator.h"
 
 BEGIN_CONSUS_NAMESPACE
 
@@ -51,8 +57,14 @@ class daemon
 
     private:
         struct coordinator_callback;
-        struct comparator;
+        class migration_bgthread;
+        typedef e::state_hash_table<uint64_t, read_replicator> read_replicator_map_t;
+        typedef e::state_hash_table<uint64_t, write_replicator> write_replicator_map_t;
+        typedef e::state_hash_table<partition_id, migrator> migrator_map_t;
         friend class mapper;
+        friend class read_replicator;
+        friend class write_replicator;
+        friend class migrator;
 
     private:
         void loop(size_t thread);
@@ -62,9 +74,27 @@ class daemon
         void process_write_finish(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_write_cancel(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
 
+        void process_rep_rd(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_rep_wr(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_raw_rd(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_raw_rd_resp(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_raw_wr(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_raw_wr_resp(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+
+        void process_lock_op(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+
+        void process_migrate_syn(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_migrate_ack(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+
     private:
         configuration* get_config();
         void debug_dump();
+        uint64_t generate_id();
+        uint64_t resend_interval() { return PO6_SECONDS; }
+        unsigned choose_index(const e::slice& table, const e::slice& key);
+        void choose_replicas(const e::slice& table, const e::slice& key,
+                             comm_id replicas[CONSUS_MAX_REPLICATION_FACTOR],
+                             unsigned* num_replicas, unsigned* desired_replication);
         bool send(comm_id id, std::auto_ptr<e::buffer> msg);
 
     private:
@@ -76,9 +106,11 @@ class daemon
         std::auto_ptr<coordinator_link> m_coord;
         configuration* m_config;
         std::vector<e::compat::shared_ptr<po6::threads::thread> > m_threads;
-        std::auto_ptr<comparator> m_cmp;
-        const leveldb::FilterPolicy* m_bf;
-        leveldb::DB* m_db;
+        std::auto_ptr<datalayer> m_data;
+        read_replicator_map_t m_repl_rd;
+        write_replicator_map_t m_repl_wr;
+        migrator_map_t m_migrations;
+        std::auto_ptr<migration_bgthread> m_migrate_thread;
 
     private:
         daemon(const daemon&);

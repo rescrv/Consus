@@ -38,6 +38,7 @@ coordinator_link :: coordinator_link(const std::string& rendezvous,
     , m_config_data_sz(0)
     , m_last_config_state(0)
     , m_last_config_valid(false)
+    , m_faf_status(REPLICANT_SUCCESS)
     , m_allow_rereg(false)
     , m_error(false)
     , m_orphaned(false)
@@ -216,6 +217,15 @@ coordinator_link :: call(const char* func,
 {
     po6::threads::mutex::hold hold(&m_mtx);
     return call_no_lock(func, input, input_sz, rc);
+}
+
+void
+coordinator_link :: fire_and_forget(const char* func,
+                                    const char* input, size_t input_sz)
+{
+    po6::threads::mutex::hold hold(&m_mtx);
+    replicant_client_call(m_repl, "consus", func, input, input_sz,
+                          0, &m_faf_status, NULL, NULL);
 }
 
 void

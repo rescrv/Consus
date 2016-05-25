@@ -67,17 +67,20 @@ class transaction
         void commit_record(e::slice commit_record,
                            std::auto_ptr<e::buffer> _backing,
                            daemon* d);
-        void callback(uint64_t seqno, daemon* d);
+        void callback_durable(uint64_t seqno, daemon* d);
+
+        // key value store callbacks
+        void callback_locked(consus_returncode rc, uint64_t seqno, daemon* d);
+        void callback_unlocked(consus_returncode rc, uint64_t seqno, daemon* d);
+        void callback_read(consus_returncode rc, uint64_t timestamp, const e::slice& value,
+                           uint64_t seqno, daemon*d);
+        void callback_write(consus_returncode rc, uint64_t seqno, daemon* d);
+        void callback_verify_read(consus_returncode rc, uint64_t timestamp, const e::slice& value,
+                                  uint64_t seqno, daemon*d);
+        void callback_verify_write(consus_returncode rc, uint64_t timestamp, const e::slice& value,
+                                   uint64_t seqno, daemon*d);
+
         void externally_work_state_machine(daemon* d);
-        void kvs_rd_locked(uint64_t seqno,
-                           consus_returncode rc,
-                           uint64_t timestamp,
-                           const e::slice& value,
-                           std::auto_ptr<e::buffer> backing,
-                           daemon* d);
-        void kvs_rd_unlocked(uint64_t seqno, daemon* d);
-        void kvs_wr_begun(uint64_t seqno, daemon* d);
-        void kvs_wr_finished(uint64_t seqno, daemon* d);
 
     private:
         struct operation;
@@ -99,9 +102,9 @@ class transaction
         void commit_record_begin(uint64_t seqno, e::unpacker up,
                                  e::compat::shared_ptr<e::buffer> backing, daemon* d);
         void commit_record_read(uint64_t seqno, e::unpacker up,
-                                e::compat::shared_ptr<e::buffer> backing);
+                                e::compat::shared_ptr<e::buffer> backing, daemon* d);
         void commit_record_write(uint64_t seqno, e::unpacker up,
-                                 e::compat::shared_ptr<e::buffer> backing);
+                                 e::compat::shared_ptr<e::buffer> backing, daemon* d);
         void commit_record_prepare(uint64_t seqno, e::unpacker up,
                                    e::compat::shared_ptr<e::buffer> backing, daemon* d);
         void internal_begin(const char* source, uint64_t timestamp,
@@ -139,11 +142,12 @@ class transaction
         bool resize_to_hold(uint64_t seqno);
 
         // key value store utils
-        void acquire_read_lock(uint64_t seqno, daemon* d);
-        void release_read_lock(uint64_t seqno, daemon* d);
-        void begin_write(uint64_t seqno, daemon* d);
-        void finish_write(uint64_t seqno, daemon* d);
-        void cancel_write(uint64_t seqno, daemon* d);
+        void acquire_lock(uint64_t seqno, daemon* d);
+        void release_lock(uint64_t seqno, daemon* d);
+        void start_read(uint64_t seqno, daemon* d);
+        void start_write(uint64_t seqno, daemon* d);
+        void start_verify_read(uint64_t seqno, daemon* d);
+        void start_verify_write(uint64_t seqno, daemon* d);
 
         // inter-data center
         std::string generate_log_entry(uint64_t seqno);

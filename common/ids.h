@@ -26,6 +26,7 @@
         return lhs.get() OP rhs.get(); \
     }
 #define CREATE_ID(TYPE) \
+    BEGIN_CONSUS_NAMESPACE \
     class TYPE ## _id \
     { \
         public: \
@@ -53,9 +54,19 @@
     OPERATOR(TYPE, ==) \
     OPERATOR(TYPE, !=) \
     OPERATOR(TYPE, >=) \
-    OPERATOR(TYPE, >)
-
-BEGIN_CONSUS_NAMESPACE
+    OPERATOR(TYPE, >) \
+    END_CONSUS_NAMESPACE \
+    BEGIN_E_COMPAT_NAMESPACE \
+    template <> \
+    struct hash<consus::TYPE ## _id> \
+    { \
+        size_t operator()(consus::TYPE ## _id x) const \
+        { \
+            e::compat::hash<uint64_t> h; \
+            return h(x.get()); \
+        } \
+    }; \
+    END_E_COMPAT_NAMESPACE
 
 CREATE_ID(abstract)
 CREATE_ID(cluster)
@@ -63,8 +74,7 @@ CREATE_ID(version)
 CREATE_ID(comm)
 CREATE_ID(paxos_group)
 CREATE_ID(data_center)
-
-END_CONSUS_NAMESPACE
+CREATE_ID(partition)
 
 #undef OPERATOR
 #undef CREATE_ID

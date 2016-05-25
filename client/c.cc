@@ -170,11 +170,10 @@ consus_error_location(consus_client* _cl)
 CONSUS_API const char*
 consus_returncode_to_string(consus_returncode stat)
 {
-    FAKE_STATUS;
-    SIGNAL_PROTECT_ERR(NULL);
     switch (stat)
     {
         CSTRINGIFY(CONSUS_SUCCESS);
+        CSTRINGIFY(CONSUS_LESS_DURABLE);
         CSTRINGIFY(CONSUS_NOT_FOUND);
         CSTRINGIFY(CONSUS_ABORTED);
         CSTRINGIFY(CONSUS_UNKNOWN_TABLE);
@@ -207,6 +206,52 @@ CONSUS_API void
 consus_destroy_transaction(consus_transaction* xact)
 {
     delete reinterpret_cast<consus::transaction*>(xact);
+}
+
+CONSUS_API int64_t
+consus_unsafe_get(consus_client* client,
+                  const char* table,
+                  const char* key, size_t key_sz,
+                  consus_returncode* status,
+                  char** value, size_t* value_sz)
+{
+    C_WRAP_EXCEPT(
+    return cl->unsafe_get(table, key, key_sz, status, value, value_sz);
+    );
+}
+
+CONSUS_API int64_t
+consus_unsafe_put(consus_client* client,
+                  const char* table,
+                  const char* key, size_t key_sz,
+                  const char* value, size_t value_sz,
+                  consus_returncode* status)
+{
+    C_WRAP_EXCEPT(
+    return cl->unsafe_put(table, key, key_sz, value, value_sz, status);
+    );
+}
+
+CONSUS_API int64_t
+consus_unsafe_lock(struct consus_client* client,
+                   const char* table,
+                   const char* key, size_t key_sz,
+                   enum consus_returncode* status)
+{
+    C_WRAP_EXCEPT(
+    return cl->unsafe_lock(table, key, key_sz, status);
+    );
+}
+
+CONSUS_API int64_t
+consus_unsafe_unlock(struct consus_client* client,
+                     const char* table,
+                     const char* key, size_t key_sz,
+                     enum consus_returncode* status)
+{
+    C_WRAP_EXCEPT(
+    return cl->unsafe_unlock(table, key, key_sz, status);
+    );
 }
 
 CONSUS_API int64_t

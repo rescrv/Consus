@@ -178,6 +178,17 @@ consus_coordinator_kvs_offline(rsm_context* ctx, void* obj, const char* data, si
 }
 
 CONSUS_API void
+consus_coordinator_kvs_migrated(rsm_context* ctx, void* obj, const char* data, size_t data_sz)
+{
+    PROTECT_UNINITIALIZED;
+    partition_id id;
+    e::unpacker up(data, data_sz);
+    up = up >> id;
+    CHECK_UNPACK(kvs_migrated);
+    c->kvs_migrated(ctx, id);
+}
+
+CONSUS_API void
 consus_coordinator_tick(rsm_context* ctx, void* obj, const char*, size_t)
 {
     PROTECT_UNINITIALIZED;

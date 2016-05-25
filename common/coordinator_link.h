@@ -60,6 +60,7 @@ class coordinator_link
     // piggy-back on the replicant connection
     public:
         bool call(const char* func, const char* input, size_t input_sz, coordinator_returncode* coord);
+        void fire_and_forget(const char* func, const char* input, size_t input_sz);
 
     private:
         void invariant_check();
@@ -80,6 +81,7 @@ class coordinator_link
         size_t m_config_data_sz;
         uint64_t m_last_config_state;
         bool m_last_config_valid;
+        replicant_returncode m_faf_status;
         bool m_allow_rereg;
         bool m_error;
         bool m_orphaned;

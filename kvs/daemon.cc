@@ -17,12 +17,10 @@
 #include <glog/logging.h>
 #include <glog/raw_logging.h>
 
-// LevelDB
-#include <leveldb/comparator.h>
-
 // po6
 #include <po6/io/fd.h>
 #include <po6/path.h>
+#include <po6/time.h>
 
 // e
 #include <e/atomic.h>
@@ -39,11 +37,15 @@
 
 // consus
 #include <consus.h>
+#include "common/background_thread.h"
+#include "common/constants.h"
 #include "common/consus.h"
+#include "common/lock.h"
 #include "common/macros.h"
 #include "common/network_msgtype.h"
 #include "common/transaction_group.h"
 #include "kvs/daemon.h"
+#include "kvs/leveldb_datalayer.h"
 
 using consus::daemon;
 
@@ -98,6 +100,29 @@ struct daemon::coordinator_callback : public coordinator_link::callback
         coordinator_callback& operator = (const coordinator_callback&);
 };
 
+class daemon::migration_bgthread : public consus::background_thread
+{
+    public:
+        migration_bgthread(daemon* d);
+        virtual ~migration_bgthread() throw ();
+
+    public:
+        void new_config();
+
+    protected:
+        virtual const char* thread_name();
+        virtual bool have_work();
+        virtual void do_work();
+
+    private:
+        migration_bgthread(const migration_bgthread&);
+        migration_bgthread& operator = (const migration_bgthread&);
+
+    private:
+        daemon* m_d;
+        bool m_have_new_config;
+};
+
 daemon :: coordinator_callback :: coordinator_callback(daemon* _d)
     : d(_d)
 {
@@ -145,8 +170,10 @@ daemon :: coordinator_callback :: new_config(const char* data, size_t data_sz)
     }
 
     configuration* old_config = d->get_config();
+    d->m_us.dc = c->get_data_center(d->m_us.id);
     e::atomic::store_ptr_release(&d->m_config, c.release());
     d->m_gc.collect(old_config, e::garbage_collector::free_ptr<configuration>);
+    d->m_migrate_thread->new_config();
     LOG(INFO) << "updating to configuration " << d->get_config()->version();
 
     if (s_debug_mode)
@@ -205,62 +232,72 @@ daemon :: coordinator_callback :: is_steady_state(comm_id id)
     return false;
 }
 
-struct daemon::comparator : public leveldb::Comparator
-{
-    comparator();
-    virtual ~comparator() throw ();
-    virtual int Compare(const leveldb::Slice& a, const leveldb::Slice& b) const;
-    virtual const char* Name() const { return "ConsusComparator"; }
-    virtual void FindShortestSeparator(std::string*,
-                                       const leveldb::Slice&) const {}
-    virtual void FindShortSuccessor(std::string*) const {}
-};
-
-daemon :: comparator :: comparator()
+daemon :: migration_bgthread :: migration_bgthread(daemon* d)
+    : background_thread(&d->m_gc)
+    , m_d(d)
+    , m_have_new_config(false)
 {
 }
 
-daemon :: comparator :: ~comparator() throw ()
+daemon :: migration_bgthread :: ~migration_bgthread() throw ()
 {
 }
 
-int
-daemon :: comparator :: Compare(const leveldb::Slice& a, const leveldb::Slice& b) const
+void
+daemon :: migration_bgthread :: new_config()
 {
-    if (a.size() < 8 || b.size() < 8)
+    po6::threads::mutex::hold hold(mtx());
+    m_have_new_config = true;
+    wakeup();
+}
+
+const char*
+daemon :: migration_bgthread :: thread_name()
+{
+    return "migration";
+}
+
+bool
+daemon :: migration_bgthread :: have_work()
+{
+    return m_have_new_config;
+}
+
+void
+daemon :: migration_bgthread :: do_work()
+{
     {
-        return -1;
+        po6::threads::mutex::hold hold(mtx());
+        m_have_new_config = false;
     }
 
-    e::slice x(a.data(), a.size() - 8);
-    e::slice y(b.data(), b.size() - 8);
-    size_t sz = std::min(x.size(), y.size());
-    int cmp = memcmp(x.data(), y.data(), sz);
+    configuration* c = m_d->get_config();
+    std::vector<partition_id> parts = c->migratable_partitions(m_d->m_us.id);
 
-    if (cmp < 0)
+    for (size_t i = 0; i < parts.size(); ++i)
     {
-        return -1;
-    }
-    if (cmp > 0)
-    {
-        return 1;
+        migrator_map_t::state_reference msr;
+        migrator* m = m_d->m_migrations.get_or_create_state(parts[i], &msr);
+        m->externally_work_state_machine(m_d);
     }
 
-    uint64_t at;
-    uint64_t bt;
-    e::unpack64be(x.data() + x.size() - 8, &at);
-    e::unpack64be(y.data() + y.size() - 8, &bt);
+    // XXX add a true ticker to drive state machine (call ext_work_sm every X
+    // seconds)
+    po6::sleep(PO6_SECONDS);
 
-    if (at > bt)
+    for (migrator_map_t::iterator it(&m_d->m_migrations); it.valid(); ++it)
     {
-        return -1;
-    }
-    if (at < bt)
-    {
-        return 1;
-    }
+        migrator* m = *it;
 
-    return 0;
+        if (std::find(parts.begin(), parts.end(), m->state_key()) != parts.end())
+        {
+            m->externally_work_state_machine(m_d);
+        }
+        else
+        {
+            m->terminate();
+        }
+    }
 }
 
 daemon :: daemon()
@@ -272,25 +309,17 @@ daemon :: daemon()
     , m_coord()
     , m_config(NULL)
     , m_threads()
-    , m_cmp(new comparator())
-    , m_bf()
-    , m_db()
+    , m_data()
+    , m_repl_rd(&m_gc)
+    , m_repl_wr(&m_gc)
+    , m_migrations(&m_gc)
+    , m_migrate_thread(new migration_bgthread(this))
 {
 }
 
 daemon :: ~daemon() throw ()
 {
     m_gc.collect(get_config(), e::garbage_collector::free_ptr<configuration>);
-
-    if (m_db)
-    {
-        delete m_db;
-    }
-
-    if (m_bf)
-    {
-        delete m_bf;
-    }
 }
 
 int
@@ -327,16 +356,10 @@ daemon :: run(bool background,
         return EXIT_FAILURE;
     }
 
-    leveldb::Options opts;
-    opts.create_if_missing = true;
-    opts.filter_policy = m_bf = leveldb::NewBloomFilterPolicy(10);
-    opts.max_open_files = std::max(sysconf(_SC_OPEN_MAX) >> 1, 1024L);
-    opts.comparator = m_cmp.get();
-    leveldb::Status st = leveldb::DB::Open(opts, data, &m_db);
+    m_data.reset(new leveldb_datalayer());
 
-    if (!st.ok())
+    if (!m_data->init(data))
     {
-        LOG(ERROR) << "could not open LevelDB: " << st.ToString();
         return EXIT_FAILURE;
     }
 
@@ -396,10 +419,12 @@ daemon :: run(bool background,
     for (size_t i = 0; i < threads; ++i)
     {
         using namespace po6::threads;
-        e::compat::shared_ptr<thread> t(new thread(make_thread_wrapper(&daemon::loop, this, i)));
+        e::compat::shared_ptr<thread> t(new thread(make_obj_func(&daemon::loop, this, i)));
         m_threads.push_back(t);
         t->start();
     }
+
+    m_migrate_thread->start();
 
     while (e::atomic::increment_32_nobarrier(&s_interrupts, 0) == 0)
     {
@@ -439,6 +464,7 @@ daemon :: run(bool background,
     }
 
     e::atomic::increment_32_nobarrier(&s_interrupts, 1);
+    m_migrate_thread->shutdown();
     m_busybee->shutdown();
 
     for (size_t i = 0; i < m_threads.size(); ++i)
@@ -529,24 +555,39 @@ daemon :: loop(size_t thread)
 
         switch (mt)
         {
-            case KVS_RD_LOCK:
-                process_read_lock(id, msg, up);
+            case KVS_REP_RD:
+                process_rep_rd(id, msg, up);
                 break;
-            case KVS_RD_UNLOCK:
-                process_read_unlock(id, msg, up);
+            case KVS_REP_WR:
+                process_rep_wr(id, msg, up);
                 break;
-            case KVS_WR_BEGIN:
-                process_write_begin(id, msg, up);
+            case KVS_RAW_RD:
+                process_raw_rd(id, msg, up);
                 break;
-            case KVS_WR_FINISH:
-                process_write_finish(id, msg, up);
+            case KVS_RAW_RD_RESP:
+                process_raw_rd_resp(id, msg, up);
                 break;
-            case KVS_WR_CANCEL:
-                process_write_cancel(id, msg, up);
+            case KVS_RAW_WR:
+                process_raw_wr(id, msg, up);
+                break;
+            case KVS_RAW_WR_RESP:
+                process_raw_wr_resp(id, msg, up);
+                break;
+            case KVS_LOCK_OP:
+                process_lock_op(id, msg, up);
+                break;
+            case KVS_MIGRATE_SYN:
+                process_migrate_syn(id, msg, up);
+                break;
+            case KVS_MIGRATE_ACK:
+                process_migrate_ack(id, msg, up);
                 break;
             case CONSUS_NOP:
                 break;
             case CLIENT_RESPONSE:
+            case UNSAFE_READ:
+            case UNSAFE_WRITE:
+            case UNSAFE_LOCK_OP:
             case TXMAN_BEGIN:
             case TXMAN_READ:
             case TXMAN_WRITE:
@@ -565,10 +606,9 @@ daemon :: loop(size_t thread)
             case GV_VOTE_1B:
             case GV_VOTE_2A:
             case GV_VOTE_2B:
-            case KVS_RD_LOCKED:
-            case KVS_RD_UNLOCKED:
-            case KVS_WR_BEGUN:
-            case KVS_WR_FINISHED:
+            case KVS_REP_RD_RESP:
+            case KVS_REP_WR_RESP:
+            case KVS_LOCK_OP_RESP:
             default:
                 LOG(INFO) << "received " << mt << " message which key-value-stores do not process";
                 break;
@@ -582,222 +622,332 @@ daemon :: loop(size_t thread)
 }
 
 void
-daemon :: process_read_lock(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
+daemon :: process_rep_rd(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
 {
-    transaction_group tg;
-    uint64_t seqno;
+    uint64_t nonce;
     e::slice table;
     e::slice key;
-    up = up >> tg >> seqno >> table >> key;
-    CHECK_UNPACK(KVS_RD_LOCK, up);
+    uint64_t timestamp;
+    up = up >> nonce >> table >> key >> timestamp;
+    CHECK_UNPACK(KVS_REP_RD, up);
 
     if (s_debug_mode)
     {
-        LOG(INFO) << "get(\"" << e::strescape(table.str()) << "\", \""
-                  << e::strescape(key.str()) << "\") by "
-                  << tg << "[" << seqno << "]";
+        LOG(INFO) << "replicated read(\"" << e::strescape(table.str()) << "\", \""
+                  << e::strescape(key.str()) << "\")";
     }
 
-    LOG(INFO) << tg << " request read lock(table=\"" << e::strescape(table.str())
-              << "\", key=\"" << e::strescape(key.str()) << "\"); not implemented (yet)";
+    // XXX check key meet spec
 
-    std::string tmp;
-    e::packer(&tmp) << table << key << uint64_t(UINT64_MAX);
-    leveldb::ReadOptions opts;
-    leveldb::Iterator* it = m_db->NewIterator(opts);
-
-    if (!it)
+    while (true)
     {
-        LOG(ERROR) << "fatal LevelDB failure: " << it->status().ToString();
-        e::atomic::increment_32_nobarrier(&s_interrupts, 1);
-        return;
-    }
+        uint64_t x = generate_id();
+        read_replicator_map_t::state_reference rsr;
+        read_replicator* r = m_repl_rd.create_state(x, &rsr);
 
-    e::guard g_it = e::makeguard(e::garbage_collector::free_ptr<leveldb::Iterator>, it);
-    it->Seek(tmp);
-    consus_returncode rc;
-    uint64_t timestamp = 0;
-    e::slice value;
-
-    if (!it->status().ok())
-    {
-        LOG(ERROR) << "fatal LevelDB failure: " << it->status().ToString();
-        e::atomic::increment_32_nobarrier(&s_interrupts, 1);
-        return;
-    }
-
-    leveldb::Slice k;
-
-    if (!it->Valid() || (k = it->key()).size() < 8 ||
-        memcmp(k.data(), tmp.data(), k.size() - 8) != 0)
-    {
-        rc = CONSUS_NOT_FOUND;
-    }
-    else
-    {
-        rc = CONSUS_SUCCESS;
-        e::unpack64be(k.data() + k.size() - 8, &timestamp);
-        leveldb::Slice v = it->value();
-        value = e::slice(v.data(), v.size());
-    }
-
-    const size_t sz = BUSYBEE_HEADER_SIZE
-                    + pack_size(KVS_RD_LOCKED)
-                    + pack_size(tg)
-                    + sizeof(uint64_t)
-                    + pack_size(rc)
-                    + sizeof(uint64_t)
-                    + pack_size(value);
-    msg.reset(e::buffer::create(sz));
-    msg->pack_at(BUSYBEE_HEADER_SIZE)
-        << KVS_RD_LOCKED << tg << seqno << rc << timestamp << value;
-    send(id, msg);
-
-    if (s_debug_mode)
-    {
-        if (rc == CONSUS_SUCCESS)
+        if (!r)
         {
-            LOG(INFO) << "timestamp=" << timestamp
-                      << " value=\"" << e::strescape(value.str()) << "\"";
+            continue;
         }
-        else
-        {
-            LOG(INFO) << "value not found";
-        }
+
+        r->init(id, nonce, table, key, msg);
+        r->externally_work_state_machine(this);
+        break;
     }
 }
 
 void
-daemon :: process_read_unlock(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
+daemon :: process_rep_wr(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
 {
-    transaction_group tg;
-    uint64_t seqno;
-    e::slice table;
-    e::slice key;
-    up = up >> tg >> seqno >> table >> key;
-    CHECK_UNPACK(KVS_RD_UNLOCK, up);
-
-    //if (s_debug_mode)
-    //{
-        LOG(ERROR) << tg << " request read unlock(table=\"" << e::strescape(table.str())
-                  << "\", key=\"" << e::strescape(key.str()) << "\"); not implemented (yet)";
-    //}
-
-    const size_t sz = BUSYBEE_HEADER_SIZE
-                    + pack_size(KVS_RD_UNLOCKED)
-                    + pack_size(tg)
-                    + sizeof(uint64_t);
-    msg.reset(e::buffer::create(sz));
-    msg->pack_at(BUSYBEE_HEADER_SIZE) << KVS_RD_UNLOCKED << tg << seqno;
-    send(id, msg);
-}
-
-void
-daemon :: process_write_begin(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
-{
-    transaction_group tg;
-    uint64_t seqno;
-    e::slice table;
-    e::slice key;
-    up = up >> tg >> seqno >> table >> key;
-    CHECK_UNPACK(KVS_WR_BEGIN, up);
-
-    //if (s_debug_mode)
-    //{
-        LOG(ERROR) << tg << " request write lock(table=\"" << e::strescape(table.str())
-                  << "\", key=\"" << e::strescape(key.str()) << "\"); not implemented (yet)";
-    //}
-
-    const size_t sz = BUSYBEE_HEADER_SIZE
-                    + pack_size(KVS_WR_BEGUN)
-                    + pack_size(tg)
-                    + sizeof(uint64_t);
-    msg.reset(e::buffer::create(sz));
-    msg->pack_at(BUSYBEE_HEADER_SIZE) << KVS_WR_BEGUN << tg << seqno;
-    send(id, msg);
-}
-
-void
-daemon :: process_write_finish(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
-{
-    transaction_group tg;
-    uint64_t seqno;
+    uint64_t nonce;
+    uint8_t flags;
     e::slice table;
     e::slice key;
     uint64_t timestamp;
     e::slice value;
-    up = up >> tg >> seqno >> table >> key >> timestamp >> value;
-    CHECK_UNPACK(KVS_WR_BEGIN, up);
+    up = up >> nonce >> flags >> table >> key >> timestamp >> value;
+    CHECK_UNPACK(KVS_REP_WR, up);
 
     if (s_debug_mode)
     {
-        LOG(INFO) << "put(\"" << e::strescape(table.str()) << "\", \""
-                  << e::strescape(key.str()) << "\"@" << timestamp << ", \""
-                  << e::strescape(value.str()) << "\") by "
-                  << tg << "[" << seqno << "]";
+        std::string tmp;
+        const char* v = NULL;
+
+        if ((CONSUS_WRITE_TOMBSTONE & flags))
+        {
+            v = "TOMBSTONE";
+        }
+        else
+        {
+            tmp = e::strescape(value.str());
+            v = tmp.c_str();
+        }
+
+        LOG(INFO) << "replicated write(\"" << e::strescape(table.str()) << "\", \""
+                  << e::strescape(key.str()) << "\"@" << timestamp
+                  << ", \"" << v << "\")";
     }
 
-    LOG(INFO) << tg << " request write unlock(table=\"" << e::strescape(table.str())
-              << "\", key=\"" << e::strescape(key.str()) << "\"); not implemented (yet)";
+    // XXX check key/value meet spec
 
-    std::string tmp;
-    e::packer(&tmp) << table << key << timestamp;
-    leveldb::WriteOptions opts;
-    opts.sync = true;
-    leveldb::Status st = m_db->Put(opts, tmp, leveldb::Slice(value.cdata(), value.size()));
-    consus_returncode rc;
-
-    if (st.ok())
+    while (true)
     {
-        rc = CONSUS_SUCCESS;
-    }
-    else
-    {
-        rc = CONSUS_SERVER_ERROR;
-    }
+        uint64_t x = generate_id();
+        write_replicator_map_t::state_reference wsr;
+        write_replicator* w = m_repl_wr.create_state(x, &wsr);
 
+        if (!w)
+        {
+            continue;
+        }
 
-    const size_t sz = BUSYBEE_HEADER_SIZE
-                    + pack_size(KVS_WR_FINISHED)
-                    + pack_size(tg)
-                    + sizeof(uint64_t)
-                    + pack_size(rc)
-                    + sizeof(uint64_t)
-                    + pack_size(e::slice());
-    msg.reset(e::buffer::create(sz));
-    msg->pack_at(BUSYBEE_HEADER_SIZE)
-        << KVS_WR_FINISHED << tg << seqno << rc;
-    send(id, msg);
-
-    if (!st.ok())
-    {
-        LOG(ERROR) << "fatal LevelDB failure: " << st.ToString();
+        w->init(id, nonce, flags, table, key, timestamp, value, msg);
+        w->externally_work_state_machine(this);
+        break;
     }
 }
 
 void
-daemon :: process_write_cancel(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
+daemon :: process_raw_rd(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
-    transaction_group tg;
-    uint64_t seqno;
+    uint64_t nonce;
     e::slice table;
     e::slice key;
-    up = up >> tg >> seqno >> table >> key;
-    CHECK_UNPACK(KVS_WR_CANCEL, up);
+    uint64_t timestamp;
+    up = up >> nonce >> table >> key >> timestamp;
+    CHECK_UNPACK(KVS_RAW_RD, up);
+    configuration* c = get_config();
 
-    //if (s_debug_mode)
-    //{
-        LOG(ERROR) << tg << " request write unlock(table=\"" << e::strescape(table.str())
-                  << "\", key=\"" << e::strescape(key.str()) << "\"); not implemented (yet)";
-    //}
+    if (s_debug_mode)
+    {
+        LOG(INFO) << "raw read(\"" << e::strescape(table.str()) << "\", \""
+                  << e::strescape(key.str()) << "\")@<=" << timestamp
+                  << " nonce=" << nonce;
+    }
+
+    // XXX check table exists
+    // XXX check key meet spec
+
+    unsigned index = choose_index(table, key);
+
+    if (index == CONSUS_MAX_REPLICATION_FACTOR)
+    {
+        return;
+    }
+
+    comm_id owner1;
+    comm_id owner2;
+    c->map(m_us.dc, index, &owner1, &owner2);
+
+    e::slice value;
+    datalayer::reference* ref = NULL;
+    consus_returncode rc = CONSUS_GARBAGE;
+    rc = m_data->get(table, key, timestamp, &timestamp, &value, &ref);
 
     const size_t sz = BUSYBEE_HEADER_SIZE
-                    + pack_size(KVS_WR_FINISHED)
-                    + pack_size(tg)
-                    + sizeof(uint64_t);
-    msg.reset(e::buffer::create(sz));
-    msg->pack_at(BUSYBEE_HEADER_SIZE) << KVS_WR_FINISHED << tg << seqno << CONSUS_SUCCESS;
+                    + pack_size(KVS_RAW_RD_RESP)
+                    + sizeof(uint64_t)
+                    + pack_size(rc)
+                    + sizeof(uint64_t)
+                    + pack_size(value)
+                    + pack_size(owner1);
+    std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
+    msg->pack_at(BUSYBEE_HEADER_SIZE)
+        << KVS_RAW_RD_RESP << nonce << rc << timestamp << value << owner1;
     send(id, msg);
+}
+
+void
+daemon :: process_raw_rd_resp(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
+{
+    uint64_t nonce;
+    consus_returncode rc;
+    uint64_t timestamp;
+    e::slice value;
+    comm_id owner;
+    up = up >> nonce >> rc >> timestamp >> value >> owner;
+    CHECK_UNPACK(KVS_RAW_RD_RESP, up);
+    read_replicator_map_t::state_reference rsr;
+    read_replicator* r = m_repl_rd.get_state(nonce, &rsr);
+
+    if (r)
+    {
+        if (s_debug_mode)
+        {
+            if (rc == CONSUS_SUCCESS)
+            {
+                LOG(INFO) << "raw read response nonce=" << nonce << " rc=" << rc
+                          << " timestamp=" << timestamp
+                          << " value=\"" << e::strescape(value.str()) << "\"" << " from=" << id;
+            }
+            else if (rc == CONSUS_NOT_FOUND)
+            {
+                LOG(INFO) << "raw read response nonce=" << nonce << " rc=" << rc
+                          << " timestamp=" << timestamp << " from=" << id;
+            }
+            else
+            {
+                LOG(INFO) << "raw read response nonce=" << nonce << " rc=" << rc << " from=" << id;
+            }
+        }
+
+        r->response(id, rc, timestamp, value, owner, msg, this);
+    }
+    else
+    {
+        LOG_IF(INFO, s_debug_mode) << "dropped raw read response nonce=" << nonce << " rc=" << rc << " from=" << id;
+    }
+}
+
+void
+daemon :: process_raw_wr(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
+{
+    uint64_t nonce;
+    uint8_t flags;
+    e::slice table;
+    e::slice key;
+    uint64_t timestamp;
+    e::slice value;
+    up = up >> nonce >> flags >> table >> key >> timestamp >> value;
+    CHECK_UNPACK(KVS_RAW_WR, up);
+    configuration* c = get_config();
+
+    if (s_debug_mode)
+    {
+        std::string tmp;
+        const char* v = NULL;
+
+        if ((CONSUS_WRITE_TOMBSTONE & flags))
+        {
+            v = "TOMBSTONE";
+        }
+        else
+        {
+            tmp = e::strescape(value.str());
+            v = tmp.c_str();
+        }
+
+        LOG(INFO) << "raw write(\"" << e::strescape(table.str()) << "\", \""
+                  << e::strescape(key.str()) << "\"@" << timestamp
+                  << ", \"" << v << "\") nonce=" << nonce;
+    }
+
+    // XXX check table exists
+    // XXX check key/value meet spec
+
+    unsigned index = choose_index(table, key);
+
+    if (index == CONSUS_MAX_REPLICATION_FACTOR)
+    {
+        return;
+    }
+
+    comm_id owner1;
+    comm_id owner2;
+    c->map(m_us.dc, index, &owner1, &owner2);
+    consus_returncode rc = CONSUS_GARBAGE;
+
+    if ((CONSUS_WRITE_TOMBSTONE & flags))
+    {
+        rc = m_data->del(table, key, timestamp);
+    }
+    else
+    {
+        rc = m_data->put(table, key, timestamp, value);
+    }
+
+    const size_t sz = BUSYBEE_HEADER_SIZE
+                    + pack_size(KVS_RAW_WR_RESP)
+                    + sizeof(uint64_t)
+                    + pack_size(rc)
+                    + pack_size(owner1)
+                    + pack_size(owner2);
+    std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
+    msg->pack_at(BUSYBEE_HEADER_SIZE) << KVS_RAW_WR_RESP << nonce << rc << owner1 << owner2;
+    send(id, msg);
+}
+
+void
+daemon :: process_raw_wr_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
+{
+    uint64_t nonce;
+    consus_returncode rc;
+    comm_id owner1;
+    comm_id owner2;
+    up = up >> nonce >> rc >> owner1 >> owner2;
+    CHECK_UNPACK(KVS_RAW_WR_RESP, up);
+    write_replicator_map_t::state_reference wsr;
+    write_replicator* w = m_repl_wr.get_state(nonce, &wsr);
+
+    if (w)
+    {
+        LOG_IF(INFO, s_debug_mode) << "raw write response nonce=" << nonce << " rc=" << rc << " from=" << id;
+        w->response(id, rc, owner1, owner2, this);
+    }
+    else
+    {
+        LOG_IF(INFO, s_debug_mode) << "dropped raw write response nonce=" << nonce << " rc=" << rc << " from=" << id;
+    }
+}
+
+void
+daemon :: process_lock_op(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
+{
+    uint64_t nonce;
+    e::slice table;
+    e::slice key;
+    transaction_id txid;
+    lock_t type;
+    lock_op op;
+    up = up >> nonce >> table >> key >> txid >> type >> op;
+    CHECK_UNPACK(KVS_LOCK_OP, up);
+
+    LOG(WARNING) << type << " " << op << "(\"" << e::strescape(table.str()) << "\", \""
+                 << e::strescape(key.str()) << "\") nonce=" << nonce
+                 << "; this is a NOP and not yet implemented";
+    msg->pack_at(BUSYBEE_HEADER_SIZE) << KVS_LOCK_OP_RESP << nonce << CONSUS_SUCCESS;
+    send(id, msg);
+}
+
+void
+daemon :: process_migrate_syn(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
+{
+    partition_id key;
+    version_id version;
+    up = up >> key >> version;
+    CHECK_UNPACK(KVS_MIGRATE_SYN, up);
+    configuration* c = get_config();
+
+    if (c->version() >= version)
+    {
+        LOG_IF(INFO, s_debug_mode) << "received migration SYN for " << key << "/" << version;
+        assert(pack_size(KVS_MIGRATE_SYN) == pack_size(KVS_MIGRATE_ACK));
+        msg->pack_at(BUSYBEE_HEADER_SIZE) << KVS_MIGRATE_ACK << key << c->version();
+        send(id, msg);
+    }
+    else
+    {
+        LOG_IF(INFO, s_debug_mode) << "dropping migration SYN for " << key << "/" << version;
+    }
+}
+
+void
+daemon :: process_migrate_ack(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
+{
+    partition_id key;
+    version_id version;
+    up = up >> key >> version;
+    CHECK_UNPACK(KVS_MIGRATE_ACK, up);
+
+    // XXX check source?
+
+    migrator_map_t::state_reference msr;
+    migrator* m = m_migrations.get_state(key, &msr);
+
+    if (m)
+    {
+        m->ack(version, this);
+    }
 }
 
 consus::configuration*
@@ -810,6 +960,58 @@ void
 daemon :: debug_dump()
 {
     LOG(ERROR) << "DEBUG DUMP"; // XXX
+}
+
+uint64_t
+daemon :: generate_id()
+{
+    // XXX copy of txman impl
+    // XXX don't go out of process
+    po6::io::fd fd(open("/dev/urandom", O_RDONLY));
+    uint64_t x;
+    int ret = fd.xread(&x, sizeof(x));
+    assert(ret == 8);
+    return x;
+}
+
+unsigned
+daemon :: choose_index(const e::slice& /*XXX table*/, const e::slice& key)
+{
+    // XXX use a better scheme
+    char buf[sizeof(uint16_t)];
+    memset(buf, 0, sizeof(buf));
+    memmove(buf, key.data(), key.size() < 2 ? key.size() : 2);
+    uint16_t index;
+    e::unpack16be(buf, &index);
+    return index;
+}
+
+void
+daemon :: choose_replicas(const e::slice& table, const e::slice& key,
+                          comm_id replicas[CONSUS_MAX_REPLICATION_FACTOR],
+                          unsigned* num_replicas, unsigned* desired_replication)
+{
+    *desired_replication = 5U;//XXX
+    unsigned index = choose_index(table, key);
+
+    if (index == CONSUS_KVS_PARTITIONS)
+    {
+        *num_replicas = 0;
+        return;
+    }
+
+    configuration* c = get_config();
+    data_center_id dc = c->get_data_center(m_us.id);
+
+    if (!c->hash(dc, index, replicas, num_replicas))
+    {
+        *num_replicas = 0;
+    }
+
+    if (*num_replicas > *desired_replication)
+    {
+        *num_replicas = *desired_replication;
+    }
 }
 
 bool

@@ -71,6 +71,8 @@ bool
 global_voter :: data_center_comparator :: conflict(const generalized_paxos::command& a,
                                                    const generalized_paxos::command& b) const
 {
+    (void)a;// XXX
+    (void)b;// XXX
     return true;//XXX
 }
 

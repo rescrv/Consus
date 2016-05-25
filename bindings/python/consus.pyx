@@ -29,12 +29,18 @@ cdef extern from "consus.h":
 
     cdef enum consus_returncode:
         CONSUS_SUCCESS       = 6656
-        CONSUS_NOT_FOUND     = 6657
+        CONSUS_LESS_DURABLE  = 6657
+        CONSUS_NOT_FOUND     = 6658
+        CONSUS_ABORTED       = 6659
         CONSUS_UNKNOWN_TABLE = 6720
         CONSUS_NONE_PENDING  = 6721
+        CONSUS_INVALID       = 6722
         CONSUS_TIMEOUT       = 6784
         CONSUS_INTERRUPTED   = 6785
         CONSUS_SEE_ERRNO     = 6786
+        CONSUS_COORD_FAIL    = 6787
+        CONSUS_UNAVAILABLE   = 6788
+        CONSUS_SERVER_ERROR  = 6789
         CONSUS_INTERNAL      = 6910
         CONSUS_GARBAGE       = 6911
 
@@ -69,6 +75,27 @@ cdef extern from "consus.h":
                        const char* value, size_t value_sz,
                        consus_returncode* status);
 
+cdef extern from "consus-unsafe.h":
+
+    int64_t consus_unsafe_get(consus_client* client,
+                              const char* table,
+                              const char* key, size_t key_sz,
+                              consus_returncode* status,
+                              char** value, size_t* value_sz);
+    int64_t consus_unsafe_put(consus_client* client,
+                              const char* table,
+                              const char* key, size_t key_sz,
+                              const char* value, size_t value_sz,
+                              consus_returncode* status);
+    int64_t consus_unsafe_lock(consus_client* client,
+                               const char* table,
+                               const char* key, size_t key_sz,
+                               consus_returncode* status);
+    int64_t consus_unsafe_unlock(consus_client* client,
+                                 const char* table,
+                                 const char* key, size_t key_sz,
+                                 consus_returncode* status);
+
 
 cdef class Client:
     cdef consus_client* client
@@ -95,6 +122,86 @@ cdef class Client:
 
     def begin_transaction(self):
         return Transaction(self)
+
+    def unsafe_get(self, str table, key):
+        cdef bytes tmp = table.encode('ascii')
+        cdef bytes jkey = json.dumps(key).encode('utf8')
+        cdef consus_returncode status
+        cdef const char* t = tmp
+        cdef const char* k = jkey
+        cdef size_t k_sz = len(jkey)
+        cdef char* value
+        cdef size_t value_sz
+        req = consus_unsafe_get(self.client, t, k, k_sz, &status, &value, &value_sz)
+        self.finish(req, &status)
+        if status == CONSUS_SUCCESS:
+            x = json.loads(value[:value_sz].decode('utf8'))
+            free(value)
+            return x
+        else:
+            return None
+
+    def unsafe_put(self, str table, key, value):
+        cdef bytes tmp = table.encode('ascii')
+        cdef bytes jkey = json.dumps(key).encode('utf8')
+        cdef bytes jvalue = json.dumps(value).encode('utf8')
+        cdef consus_returncode status
+        cdef const char* t = tmp
+        cdef const char* k = jkey
+        cdef size_t k_sz = len(jkey)
+        cdef const char* v = jvalue
+        cdef size_t v_sz = len(jvalue)
+        req = consus_unsafe_put(self.client, t, k, k_sz, v, v_sz, &status)
+        self.finish(req, &status)
+        return True
+
+    def unsafe_lock(self, str table, key):
+        cdef bytes tmp = table.encode('ascii')
+        cdef bytes jkey = json.dumps(key).encode('utf8')
+        cdef consus_returncode status
+        cdef const char* t = tmp
+        cdef const char* k = jkey
+        cdef size_t k_sz = len(jkey)
+        req = consus_unsafe_lock(self.client, t, k, k_sz, &status)
+        self.finish(req, &status)
+        if status == CONSUS_SUCCESS:
+            return True
+        else:
+            return False
+
+    def unsafe_unlock(self, str table, key):
+        cdef bytes tmp = table.encode('ascii')
+        cdef bytes jkey = json.dumps(key).encode('utf8')
+        cdef consus_returncode status
+        cdef const char* t = tmp
+        cdef const char* k = jkey
+        cdef size_t k_sz = len(jkey)
+        req = consus_unsafe_unlock(self.client, t, k, k_sz, &status)
+        self.finish(req, &status)
+        if status == CONSUS_SUCCESS:
+            return True
+        else:
+            return False
+
+    cdef finish(self, int64_t req, consus_returncode* rstatus):
+        cdef consus_returncode lstatus
+        if req < 0:
+            print consus_error_message(self.client).decode('ascii', 'ignore'), '@', \
+                  consus_error_location(self.client).decode('ascii', 'ignore'), ' ', \
+                  consus_returncode_to_string(rstatus[0]).decode('ascii', 'ignore')
+            assert False # XXX
+        lid = consus_wait(self.client, req, -1, &lstatus);
+        if lid < 0:
+            print consus_error_message(self.client).decode('ascii', 'ignore'), '@', \
+                  consus_error_location(self.client).decode('ascii', 'ignore'), ' ', \
+                  consus_returncode_to_string(lstatus).decode('ascii', 'ignore')
+            assert False # XXX
+        assert req == lid
+        if rstatus[0] != CONSUS_SUCCESS and rstatus[0] != CONSUS_NOT_FOUND and rstatus[0] != CONSUS_LESS_DURABLE:
+            print consus_error_message(self.client).decode('ascii', 'ignore'), '@', \
+                  consus_error_location(self.client).decode('ascii', 'ignore'), ' ', \
+                  consus_returncode_to_string(rstatus[0]).decode('ascii', 'ignore')
+            assert False # XXX
 
 
 cdef class Transaction:
@@ -155,21 +262,4 @@ cdef class Transaction:
         self.finish(req, &status)
 
     cdef finish(self, int64_t req, consus_returncode* rstatus):
-        cdef consus_returncode lstatus
-        if req < 0:
-            print consus_error_message(self.client.client).decode('ascii', 'ignore'), '@', \
-                  consus_error_location(self.client.client).decode('ascii', 'ignore'), ' ', \
-                  consus_returncode_to_string(rstatus[0]).decode('ascii', 'ignore')
-            assert False # XXX
-        lid = consus_wait(self.client.client, req, -1, &lstatus);
-        if lid < 0:
-            print consus_error_message(self.client.client).decode('ascii', 'ignore'), '@', \
-                  consus_error_location(self.client.client).decode('ascii', 'ignore'), ' ', \
-                  consus_returncode_to_string(lstatus).decode('ascii', 'ignore')
-            assert False # XXX
-        assert req == lid
-        if rstatus[0] != CONSUS_SUCCESS and rstatus[0] != CONSUS_NOT_FOUND:
-            print consus_error_message(self.client.client).decode('ascii', 'ignore'), '@', \
-                  consus_error_location(self.client.client).decode('ascii', 'ignore'), ' ', \
-                  consus_returncode_to_string(rstatus[0]).decode('ascii', 'ignore')
-            assert False # XXX
+        return self.client.finish(req, rstatus)

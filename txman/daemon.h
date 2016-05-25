@@ -35,6 +35,9 @@
 #include "txman/configuration.h"
 #include "txman/durable_log.h"
 #include "txman/global_voter.h"
+#include "txman/kvs_lock_op.h"
+#include "txman/kvs_read.h"
+#include "txman/kvs_write.h"
 #include "txman/local_voter.h"
 #include "txman/mapper.h"
 #include "txman/transaction.h"
@@ -63,6 +66,9 @@ class daemon
         struct coordinator_callback;
         struct durable_msg;
         struct durable_cb;
+        typedef e::state_hash_table<uint64_t, kvs_read> read_map_t;
+        typedef e::state_hash_table<uint64_t, kvs_write> write_map_t;
+        typedef e::state_hash_table<uint64_t, kvs_lock_op> lock_op_map_t;
         typedef e::state_hash_table<transaction_group, transaction> transaction_map_t;
         typedef e::state_hash_table<transaction_group, local_voter> local_voter_map_t;
         typedef e::state_hash_table<transaction_group, global_voter> global_voter_map_t;
@@ -73,9 +79,15 @@ class daemon
         friend class transaction;
         friend class local_voter;
         friend class global_voter;
+        friend class kvs_lock_op;
+        friend class kvs_read;
+        friend class kvs_write;
 
     private:
         void loop(size_t thread);
+        void process_unsafe_read(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_unsafe_write(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_unsafe_lock_op(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_begin(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_read(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_write(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
@@ -94,14 +106,17 @@ class daemon
         void process_gv_vote_1b(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_gv_vote_2a(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_gv_vote_2b(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
-        void process_kvs_rd_locked(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
-        void process_kvs_rd_unlocked(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
-        void process_kvs_wr_begun(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
-        void process_kvs_wr_finished(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_kvs_rep_rd_resp(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_kvs_rep_wr_resp(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_kvs_lock_op_resp(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        kvs_read* create_read(read_map_t::state_reference* sr);
+        kvs_write* create_write(write_map_t::state_reference* sr);
+        kvs_lock_op* create_lock_op(lock_op_map_t::state_reference* sr);
 
     private:
         configuration* get_config();
         void debug_dump();
+        uint64_t generate_nonce();
         transaction_id generate_txid();
         uint64_t resend_interval() { return PO6_SECONDS; }
         bool send(comm_id id, std::auto_ptr<e::buffer> msg);
@@ -128,6 +143,9 @@ class daemon
         local_voter_map_t m_local_voters;
         global_voter_map_t m_global_voters;
         disposition_map_t m_dispositions;
+        read_map_t m_readers;
+        write_map_t m_writers;
+        lock_op_map_t m_lock_ops;
         durable_log m_log;
 
         // awaiting durability

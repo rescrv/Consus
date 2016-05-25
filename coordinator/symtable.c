@@ -25,6 +25,7 @@ struct state_machine CONSUS_API rsm = {
      {"kvs_register", consus_coordinator_kvs_register},
      {"kvs_online", consus_coordinator_kvs_online},
      {"kvs_offline", consus_coordinator_kvs_offline},
+     {"kvs_migrated", consus_coordinator_kvs_migrated},
      {"tick", consus_coordinator_tick},
      {NULL, NULL}}
 };

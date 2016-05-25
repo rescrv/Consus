@@ -31,75 +31,73 @@ run mkdir kvs1.dc4 kvs2.dc4 kvs3.dc4
 run mkdir kvs1.dc5 kvs2.dc5 kvs3.dc5
 
 daemon consus coordinator --foreground --data=coord1 --listen 127.0.0.1 --listen-port 1982
-daemon consus coordinator --foreground --data=coord2 --listen 127.0.0.1 --listen-port 1983 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984
-daemon consus coordinator --foreground --data=coord3 --listen 127.0.0.1 --listen-port 1984 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984
-run replicant availability-check --servers 3 --timeout 30 --host 127.0.0.1 --port 1984
+run replicant availability-check --servers 1 --timeout 30 --host 127.0.0.1 --port 1982
 
-run consus create-data-center --cluster 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 dc1
-run consus create-data-center --cluster 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 dc2
-run consus create-data-center --cluster 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 dc3
-run consus create-data-center --cluster 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 dc4
-run consus create-data-center --cluster 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 dc5
+run consus create-data-center --cluster 127.0.0.1:1982 dc1
+run consus create-data-center --cluster 127.0.0.1:1982 dc2
+run consus create-data-center --cluster 127.0.0.1:1982 dc3
+run consus create-data-center --cluster 127.0.0.1:1982 dc4
+run consus create-data-center --cluster 127.0.0.1:1982 dc5
 
 run consus set-default-data-center dc1
-daemon consus transaction-manager --debug --foreground --data=txman1.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 22751
-daemon consus transaction-manager --debug --foreground --data=txman2.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 22752
-daemon consus transaction-manager --debug --foreground --data=txman3.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 22753
+daemon consus transaction-manager --debug --foreground --data=txman1.dc1 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 22751
+daemon consus transaction-manager --debug --foreground --data=txman2.dc1 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 22752
+daemon consus transaction-manager --debug --foreground --data=txman3.dc1 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 22753
 run consus availability-check --transaction-managers 3 --transaction-manager-groups 1 --timeout 30
 
 run consus set-default-data-center dc2
-daemon consus transaction-manager --debug --foreground --data=txman1.dc2 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 23751
-daemon consus transaction-manager --debug --foreground --data=txman2.dc2 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 23752
-daemon consus transaction-manager --debug --foreground --data=txman3.dc2 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 23753
+daemon consus transaction-manager --debug --foreground --data=txman1.dc2 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 23751
+daemon consus transaction-manager --debug --foreground --data=txman2.dc2 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 23752
+daemon consus transaction-manager --debug --foreground --data=txman3.dc2 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 23753
 run consus availability-check --transaction-managers 6 --transaction-manager-groups 2 --timeout 30
 
 run consus set-default-data-center dc3
-daemon consus transaction-manager --debug --foreground --data=txman1.dc3 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 24751
-daemon consus transaction-manager --debug --foreground --data=txman2.dc3 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 24752
-daemon consus transaction-manager --debug --foreground --data=txman3.dc3 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 24753
+daemon consus transaction-manager --debug --foreground --data=txman1.dc3 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 24751
+daemon consus transaction-manager --debug --foreground --data=txman2.dc3 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 24752
+daemon consus transaction-manager --debug --foreground --data=txman3.dc3 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 24753
 run consus availability-check --transaction-managers 9 --transaction-manager-groups 3 --timeout 30
 
 run consus set-default-data-center dc4
-daemon consus transaction-manager --debug --foreground --data=txman1.dc4 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 25751
-daemon consus transaction-manager --debug --foreground --data=txman2.dc4 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 25752
-daemon consus transaction-manager --debug --foreground --data=txman3.dc4 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 25753
+daemon consus transaction-manager --debug --foreground --data=txman1.dc4 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 25751
+daemon consus transaction-manager --debug --foreground --data=txman2.dc4 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 25752
+daemon consus transaction-manager --debug --foreground --data=txman3.dc4 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 25753
 run consus availability-check --transaction-managers 12 --transaction-manager-groups 4 --timeout 30
 
 run consus set-default-data-center dc5
-daemon consus transaction-manager --debug --foreground --data=txman1.dc5 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 26751
-daemon consus transaction-manager --debug --foreground --data=txman2.dc5 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 26752
-daemon consus transaction-manager --debug --foreground --data=txman3.dc5 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 26753
+daemon consus transaction-manager --debug --foreground --data=txman1.dc5 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 26751
+daemon consus transaction-manager --debug --foreground --data=txman2.dc5 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 26752
+daemon consus transaction-manager --debug --foreground --data=txman3.dc5 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 26753
 run consus availability-check --transaction-managers 15 --transaction-manager-groups 5 --timeout 30
 
 run consus set-default-data-center dc1
-daemon consus key-value-store --debug --foreground --data=kvs1.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 22761
-daemon consus key-value-store --debug --foreground --data=kvs2.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 22762
-daemon consus key-value-store --debug --foreground --data=kvs3.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 22763
+daemon consus key-value-store --debug --foreground --data=kvs1.dc1 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 22761
+daemon consus key-value-store --debug --foreground --data=kvs2.dc1 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 22762
+daemon consus key-value-store --debug --foreground --data=kvs3.dc1 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 22763
 run consus availability-check --key-value-stores 3 --timeout 30
 
 run consus set-default-data-center dc2
-daemon consus key-value-store --debug --foreground --data=kvs1.dc2 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 23761
-daemon consus key-value-store --debug --foreground --data=kvs2.dc2 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 23762
-daemon consus key-value-store --debug --foreground --data=kvs3.dc2 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 23763
+daemon consus key-value-store --debug --foreground --data=kvs1.dc2 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 23761
+daemon consus key-value-store --debug --foreground --data=kvs2.dc2 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 23762
+daemon consus key-value-store --debug --foreground --data=kvs3.dc2 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 23763
 run consus availability-check --key-value-stores 6 --timeout 30
 
 run consus set-default-data-center dc3
-daemon consus key-value-store --debug --foreground --data=kvs1.dc3 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 24761
-daemon consus key-value-store --debug --foreground --data=kvs2.dc3 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 24762
-daemon consus key-value-store --debug --foreground --data=kvs3.dc3 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 24763
+daemon consus key-value-store --debug --foreground --data=kvs1.dc3 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 24761
+daemon consus key-value-store --debug --foreground --data=kvs2.dc3 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 24762
+daemon consus key-value-store --debug --foreground --data=kvs3.dc3 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 24763
 run consus availability-check --key-value-stores 9 --timeout 30
 
 run consus set-default-data-center dc4
-daemon consus key-value-store --debug --foreground --data=kvs1.dc4 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 25761
-daemon consus key-value-store --debug --foreground --data=kvs2.dc4 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 25762
-daemon consus key-value-store --debug --foreground --data=kvs3.dc4 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 25763
+daemon consus key-value-store --debug --foreground --data=kvs1.dc4 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 25761
+daemon consus key-value-store --debug --foreground --data=kvs2.dc4 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 25762
+daemon consus key-value-store --debug --foreground --data=kvs3.dc4 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 25763
 run consus availability-check --key-value-stores 12 --timeout 30
 
 run consus set-default-data-center dc5
-daemon consus key-value-store --debug --foreground --data=kvs1.dc5 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 26761
-daemon consus key-value-store --debug --foreground --data=kvs2.dc5 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 26762
-daemon consus key-value-store --debug --foreground --data=kvs3.dc5 --connect-string 127.0.0.1:1982,127.0.0.1:1983,127.0.0.1:1984 --listen 127.0.0.1 --listen-port 26763
+daemon consus key-value-store --debug --foreground --data=kvs1.dc5 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 26761
+daemon consus key-value-store --debug --foreground --data=kvs2.dc5 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 26762
+daemon consus key-value-store --debug --foreground --data=kvs3.dc5 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 26763
 run consus availability-check --key-value-stores 15 --timeout 30
 
-run replicant availability-check --servers 3 --timeout 30 --host 127.0.0.1 --port 1984
+run replicant availability-check --servers 1 --timeout 30 --host 127.0.0.1 --port 1982
 run sleep 10 # XXX

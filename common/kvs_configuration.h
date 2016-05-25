@@ -8,6 +8,7 @@
 #include "namespace.h"
 #include "common/ids.h"
 #include "common/kvs_state.h"
+#include "common/ring.h"
 
 BEGIN_CONSUS_NAMESPACE
 
@@ -15,11 +16,13 @@ e::unpacker kvs_configuration(e::unpacker up,
                               cluster_id* cid,
                               version_id* vid,
                               uint64_t* flags,
-                              std::vector<kvs_state>* kvss);
+                              std::vector<kvs_state>* kvss,
+                              std::vector<ring>* rings);
 std::string kvs_configuration(const cluster_id& cid,
                               const version_id& vid,
                               uint64_t flags,
-                              const std::vector<kvs_state>& kvss);
+                              const std::vector<kvs_state>& kvss,
+                              const std::vector<ring>& rings);
 
 END_CONSUS_NAMESPACE
 

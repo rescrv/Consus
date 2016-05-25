@@ -75,18 +75,33 @@ struct transaction :: operation
     consus_returncode rc;
     e::compat::shared_ptr<e::buffer> backing;
 
+    // locking
+    bool require_lock;
+    lock_t lock_type;
+    bool lock_acquired;
+    bool lock_released;
+    uint64_t lock_nonce;
+
     // reading
-    bool require_read_lock;
-    bool read_lock_acquired;
-    bool read_lock_released;
-    e::compat::shared_ptr<e::buffer> read_backing;
-    uint64_t read_timestamp;
+    bool require_read;
+    bool read_done;
+    std::string read_backing;
+    uint64_t read_nonce;
 
     // writing
     bool require_write;
-    bool write_started;
-    bool write_finished;
-    uint64_t write_timestamp;
+    bool write_done;
+    uint64_t write_nonce;
+
+    // verify read
+    bool require_verify_read;
+    bool verify_read_done;
+    uint64_t verify_read_nonce;
+
+    // verify write
+    bool require_verify_write;
+    bool verify_write_done;
+    uint64_t verify_write_nonce;
 
     // durability
     bool log_write_issued;
@@ -108,15 +123,24 @@ transaction :: operation :: operation()
     , value()
     , rc(CONSUS_GARBAGE)
     , backing()
-    , require_read_lock(false)
-    , read_lock_acquired(false)
-    , read_lock_released(false)
+    , require_lock(false)
+    , lock_type()
+    , lock_acquired(false)
+    , lock_released(false)
+    , lock_nonce(0)
+    , require_read(false)
+    , read_done(false)
     , read_backing()
-    , read_timestamp(0)
+    , read_nonce()
     , require_write(false)
-    , write_started(false)
-    , write_finished(false)
-    , write_timestamp(0)
+    , write_done(false)
+    , write_nonce(0)
+    , require_verify_read(false)
+    , verify_read_done(false)
+    , verify_read_nonce()
+    , require_verify_write(false)
+    , verify_write_done(false)
+    , verify_write_nonce()
     , log_write_issued(false)
     , log_write_durable(false)
     , client()
@@ -331,7 +355,9 @@ transaction :: read(comm_id id, uint64_t nonce, uint64_t seqno,
     e::compat::shared_ptr<e::buffer> backing(_backing.release());
     po6::threads::mutex::hold hold(&m_mtx);
     internal_read("client", seqno, table, key, backing, d);
-    m_ops[seqno].require_read_lock = true;
+    m_ops[seqno].require_lock = true;
+    m_ops[seqno].lock_type = LOCK_SHARE;
+    m_ops[seqno].require_read = true;
     m_ops[seqno].set_client(id, nonce);
     work_state_machine(d);
 }
@@ -358,17 +384,18 @@ transaction :: paxos_2a_read(uint64_t seqno,
     e::compat::shared_ptr<e::buffer> backing(_backing.release());
     po6::threads::mutex::hold hold(&m_mtx);
     internal_read("paxos 2a", seqno, table, key, backing, d);
-    m_ops[seqno].require_read_lock = true;
-    m_ops[seqno].read_lock_acquired = true;
-    // XXX copy value
+    m_ops[seqno].require_lock = true;
+    m_ops[seqno].lock_type = LOCK_SHARE;
+    m_ops[seqno].lock_acquired = true;
+    m_ops[seqno].timestamp = timestamp;
     work_state_machine(d);
 }
 
-#if 0
 void
 transaction :: commit_record_read(uint64_t seqno,
                                   e::unpacker up,
-                                  std::auto_ptr<e::buffer> backing)
+                                  e::compat::shared_ptr<e::buffer> backing,
+                                  daemon* d)
 {
     e::slice table;
     e::slice key;
@@ -378,16 +405,17 @@ transaction :: commit_record_read(uint64_t seqno,
     if (up.error() || up.remain())
     {
         UNPACK_ERROR("commit record::read");
-        LOG_IF(INFO, s_debug_mode) << m_tg << " commit record read failed; invariants violated";
-        m_avoid_commit_if_possible = true;
+        LOG_IF(INFO, s_debug_mode) << logid() << " commit record read failed; invariants violated";
+        avoid_commit_if_possible(d);
         return;
     }
 
-    internal_read("commit record", seqno, table, key, backing);
+    internal_read("commit record", seqno, table, key, backing, d);
     m_ops[seqno].require_lock = true;
-    m_ops[seqno].require_fetch = true;
+    m_ops[seqno].lock_type = LOCK_SHARE;
+    m_ops[seqno].timestamp = timestamp;
+    m_ops[seqno].require_verify_read = true;
 }
-#endif
 
 void
 transaction :: internal_read(const char* source, uint64_t seqno,
@@ -400,7 +428,7 @@ transaction :: internal_read(const char* source, uint64_t seqno,
 
     if (s_debug_mode)
     {
-        LOG(INFO) << m_tg << "[" << seqno << "] = " << source << " initiated read(\""
+        LOG(INFO) << logid() << "[" << seqno << "] = " << source << " initiated read(\""
                   << e::strescape(table.str()) << "\", \""
                   << e::strescape(key.str()) << "\")";
     }
@@ -424,7 +452,7 @@ transaction :: internal_read(const char* source, uint64_t seqno,
     if (!resize_to_hold(seqno) ||
         !m_ops[seqno].merge(op, cmp))
     {
-        LOG_IF(INFO, s_debug_mode) << m_tg << " read failed; invariants violated";
+        LOG_IF(INFO, s_debug_mode) << logid() << " read failed; invariants violated";
         avoid_commit_if_possible(d);
         return;
     }
@@ -441,6 +469,8 @@ transaction :: write(comm_id id, uint64_t nonce, uint64_t seqno,
     e::compat::shared_ptr<e::buffer> backing(_backing.release());
     po6::threads::mutex::hold hold(&m_mtx);
     internal_write("client", seqno, table, key, value, backing, d);
+    m_ops[seqno].require_lock = true;
+    m_ops[seqno].lock_type = LOCK_EXCL;
     m_ops[seqno].require_write = true;
     m_ops[seqno].set_client(id, nonce);
     work_state_machine(d);
@@ -468,17 +498,18 @@ transaction :: paxos_2a_write(uint64_t seqno,
     e::compat::shared_ptr<e::buffer> backing(_backing.release());
     po6::threads::mutex::hold hold(&m_mtx);
     internal_write("paxos 2a", seqno, table, key, value, backing, d);
+    m_ops[seqno].require_lock = true;
+    m_ops[seqno].lock_type = LOCK_EXCL;
+    m_ops[seqno].lock_acquired = true;
     m_ops[seqno].require_write = true;
-    m_ops[seqno].write_started = true;
-    // XXX copy timestamp
     work_state_machine(d);
 }
 
-#if 0
 void
 transaction :: commit_record_write(uint64_t seqno,
                                    e::unpacker up,
-                                   std::auto_ptr<e::buffer> backing)
+                                   e::compat::shared_ptr<e::buffer> backing,
+                                   daemon* d)
 {
     e::slice table;
     e::slice key;
@@ -488,16 +519,17 @@ transaction :: commit_record_write(uint64_t seqno,
     if (up.error() || up.remain())
     {
         UNPACK_ERROR("commit record::write");
-        LOG_IF(INFO, s_debug_mode) << m_tg << " commit record write failed; invariants violated";
-        m_avoid_commit_if_possible = true;
+        LOG_IF(INFO, s_debug_mode) << logid() << " commit record write failed; invariants violated";
+        avoid_commit_if_possible(d);
         return;
     }
 
-    internal_write("commit record", seqno, table, key, value, backing);
+    internal_write("commit record", seqno, table, key, value, backing, d);
     m_ops[seqno].require_lock = true;
-    m_ops[seqno].require_flush = true;
+    m_ops[seqno].lock_type = LOCK_EXCL;
+    m_ops[seqno].require_verify_write = true;
+    m_ops[seqno].require_write = true;
 }
-#endif
 
 void
 transaction :: internal_write(const char* source, uint64_t seqno,
@@ -511,7 +543,7 @@ transaction :: internal_write(const char* source, uint64_t seqno,
 
     if (s_debug_mode)
     {
-        LOG(INFO) << m_tg << "[" << seqno << "] = " << source << " initiated write(\""
+        LOG(INFO) << logid() << "[" << seqno << "] = " << source << " initiated write(\""
                   << e::strescape(table.str()) << "\", \""
                   << e::strescape(key.str()) << "\", \""
                   << e::strescape(value.str()) << "\")";
@@ -538,7 +570,7 @@ transaction :: internal_write(const char* source, uint64_t seqno,
     if (!resize_to_hold(seqno) ||
         !m_ops[seqno].merge(op, cmp))
     {
-        LOG_IF(INFO, s_debug_mode) << m_tg << " write failed; invariants violated";
+        LOG_IF(INFO, s_debug_mode) << logid() << " write failed; invariants violated";
         avoid_commit_if_possible(d);
         return;
     }
@@ -779,14 +811,12 @@ transaction :: commit_record(e::slice commit_record, std::auto_ptr<e::buffer> _b
             case LOG_ENTRY_TX_BEGIN:
                 commit_record_begin(seqno, eup, backing, d);
                 break;
-#if 0
             case LOG_ENTRY_TX_READ:
-                commit_record_read(seqno, eup, backing);
+                commit_record_read(seqno, eup, backing, d);
                 break;
             case LOG_ENTRY_TX_WRITE:
-                commit_record_write(seqno, eup, backing);
+                commit_record_write(seqno, eup, backing, d);
                 break;
-#endif
             case LOG_ENTRY_TX_PREPARE:
                 commit_record_prepare(seqno, eup, backing, d);
                 break;
@@ -821,7 +851,7 @@ transaction :: commit_record(e::slice commit_record, std::auto_ptr<e::buffer> _b
 }
 
 void
-transaction :: callback(uint64_t seqno, daemon* d)
+transaction :: callback_durable(uint64_t seqno, daemon* d)
 {
     {
         po6::threads::mutex::hold hold(&m_mtx);
@@ -838,12 +868,145 @@ transaction :: callback(uint64_t seqno, daemon* d)
 }
 
 void
-transaction :: externally_work_state_machine(daemon* d)
+transaction :: callback_locked(consus_returncode rc, uint64_t seqno, daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
-    work_state_machine(d);
+
+    if (seqno >= m_ops.size())
+    {
+        return;
+    }
+
+    assert(rc == CONSUS_SUCCESS);// XXX unsafe
+
+    if (m_ops[seqno].require_lock && !m_ops[seqno].lock_acquired)
+    {
+        m_ops[seqno].lock_nonce = 0;
+        m_ops[seqno].lock_acquired = true;
+        work_state_machine(d);
+    }
 }
 
+void
+transaction :: callback_unlocked(consus_returncode rc, uint64_t seqno, daemon* d)
+{
+    po6::threads::mutex::hold hold(&m_mtx);
+
+    if (seqno >= m_ops.size())
+    {
+        return;
+    }
+
+    assert(rc == CONSUS_SUCCESS);// XXX unsafe
+
+    if (m_ops[seqno].require_lock && !m_ops[seqno].lock_released)
+    {
+        m_ops[seqno].lock_nonce = 0;
+        m_ops[seqno].lock_released = true;
+        work_state_machine(d);
+    }
+}
+
+void
+transaction :: callback_read(consus_returncode rc, uint64_t timestamp, const e::slice& value,
+                             uint64_t seqno, daemon*d)
+{
+    po6::threads::mutex::hold hold(&m_mtx);
+
+    if (seqno >= m_ops.size())
+    {
+        return;
+    }
+
+    assert(rc == CONSUS_SUCCESS || rc == CONSUS_NOT_FOUND);// XXX unsafe
+
+    if (m_ops[seqno].require_read && !m_ops[seqno].read_done)
+    {
+        m_ops[seqno].read_nonce = 0;
+        m_ops[seqno].read_done = true;
+        m_ops[seqno].read_backing.assign(value.cdata(), value.size());
+        m_ops[seqno].timestamp = timestamp;
+        m_ops[seqno].value = e::slice(m_ops[seqno].read_backing);
+        m_ops[seqno].rc = rc;
+        work_state_machine(d);
+    }
+}
+
+void
+transaction :: callback_write(consus_returncode rc, uint64_t seqno, daemon* d)
+{
+    po6::threads::mutex::hold hold(&m_mtx);
+
+    if (seqno >= m_ops.size())
+    {
+        return;
+    }
+
+    assert(rc == CONSUS_SUCCESS || rc == CONSUS_LESS_DURABLE);// XXX unsafe
+
+    if (m_ops[seqno].require_write && !m_ops[seqno].write_done)
+    {
+        m_ops[seqno].write_nonce = 0;
+        m_ops[seqno].write_done = true;
+        work_state_machine(d);
+    }
+}
+
+void
+transaction :: callback_verify_read(consus_returncode rc, uint64_t timestamp, const e::slice&,
+                                    uint64_t seqno, daemon*d)
+{
+    po6::threads::mutex::hold hold(&m_mtx);
+
+    if (seqno >= m_ops.size())
+    {
+        return;
+    }
+
+    assert(rc == CONSUS_SUCCESS || rc == CONSUS_NOT_FOUND);// XXX unsafe
+
+    if (m_ops[seqno].require_verify_read && !m_ops[seqno].verify_read_done)
+    {
+        m_ops[seqno].verify_read_nonce = 0;
+        m_ops[seqno].verify_read_done = true;
+
+        if (timestamp > m_ops[seqno].timestamp)
+        {
+            avoid_commit_if_possible(d);
+        }
+
+        work_state_machine(d);
+    }
+}
+
+void
+transaction :: callback_verify_write(consus_returncode rc, uint64_t timestamp, const e::slice&,
+                                     uint64_t seqno, daemon*d)
+{
+    po6::threads::mutex::hold hold(&m_mtx);
+
+    if (seqno >= m_ops.size())
+    {
+        return;
+    }
+
+    assert(rc == CONSUS_SUCCESS || rc == CONSUS_NOT_FOUND);// XXX unsafe
+
+    if (m_ops[seqno].require_verify_write && !m_ops[seqno].verify_write_done)
+    {
+        m_ops[seqno].verify_write_nonce = 0;
+        m_ops[seqno].verify_write_done = true;
+
+        if (timestamp >= m_timestamp)
+        {
+            avoid_commit_if_possible(d);
+        }
+
+        work_state_machine(d);
+    }
+}
+
+#if 0
 void
 transaction :: kvs_rd_locked(uint64_t seqno,
                              consus_returncode rc,
@@ -866,7 +1029,7 @@ transaction :: kvs_rd_locked(uint64_t seqno,
         m_ops[seqno].timestamp = timestamp;
         m_ops[seqno].value = value;
         m_ops[seqno].read_backing = e::compat::shared_ptr<e::buffer>(backing.release());
-        m_ops[seqno].read_timestamp = 0;
+        m_ops[seqno].time_of_last_read_request = 0;
 
         if (m_state == EXECUTING)
         {
@@ -874,20 +1037,6 @@ transaction :: kvs_rd_locked(uint64_t seqno,
         }
     }
 
-    work_state_machine(d);
-}
-
-void
-transaction :: kvs_rd_unlocked(uint64_t seqno, daemon* d)
-{
-    po6::threads::mutex::hold hold(&m_mtx);
-
-    if (seqno >= m_ops.size())
-    {
-        return;
-    }
-
-    m_ops[seqno].read_lock_released = true;
     work_state_machine(d);
 }
 
@@ -902,7 +1051,7 @@ transaction :: kvs_wr_begun(uint64_t seqno, daemon* d)
     }
 
     m_ops[seqno].write_started = true;
-    m_ops[seqno].write_timestamp = 0;
+    m_ops[seqno].time_of_last_write_request = 0;
     work_state_machine(d);
 }
 
@@ -917,6 +1066,14 @@ transaction :: kvs_wr_finished(uint64_t seqno, daemon* d)
     }
 
     m_ops[seqno].write_finished = true;
+    work_state_machine(d);
+}
+#endif
+
+void
+transaction :: externally_work_state_machine(daemon* d)
+{
+    po6::threads::mutex::hold hold(&m_mtx);
     work_state_machine(d);
 }
 
@@ -972,15 +1129,27 @@ transaction :: work_state_machine_executing(daemon* d)
             continue;
         }
 
-        if (m_ops[i].require_read_lock && !m_ops[i].read_lock_acquired)
+        if (m_ops[i].require_lock && !m_ops[i].lock_acquired)
         {
-            acquire_read_lock(i, d);
+            acquire_lock(i, d);
             continue;
         }
 
-        if (m_ops[i].require_write && !m_ops[i].write_started)
+        if (m_ops[i].require_read && !m_ops[i].read_done)
         {
-            begin_write(i, d);
+            start_read(i, d);
+            continue;
+        }
+
+        if (m_ops[i].require_verify_read && !m_ops[i].verify_read_done)
+        {
+            start_verify_read(i, d);
+            continue;
+        }
+
+        if (m_ops[i].require_verify_write && !m_ops[i].verify_write_done)
+        {
+            start_verify_write(i, d);
             continue;
         }
 
@@ -1169,7 +1338,7 @@ transaction :: work_state_machine_global_commit_vote(daemon* d)
     }
     else
     {
-        LOG(ERROR) << m_tg << " global commit failed; invariants violated";
+        LOG(ERROR) << logid() << " global commit failed; invariants violated";
         return;
     }
 
@@ -1191,15 +1360,15 @@ transaction :: work_state_machine_committed(daemon* d)
 
         ++non_nop;
 
-        if (m_ops[i].require_read_lock && !m_ops[i].read_lock_released)
+        if (m_ops[i].require_write && !m_ops[i].write_done)
         {
-            release_read_lock(i, d);
+            start_write(i, d);
             continue;
         }
 
-        if (m_ops[i].require_write && !m_ops[i].write_finished)
+        if (m_ops[i].require_lock && !m_ops[i].lock_released)
         {
-            finish_write(i, d);
+            release_lock(i, d);
             continue;
         }
 
@@ -1230,15 +1399,9 @@ transaction :: work_state_machine_aborted(daemon* d)
 
         ++non_nop;
 
-        if (m_ops[i].require_read_lock && !m_ops[i].read_lock_released)
+        if (m_ops[i].require_lock && !m_ops[i].lock_released)
         {
-            release_read_lock(i, d);
-            continue;
-        }
-
-        if (m_ops[i].require_write && !m_ops[i].write_finished)
-        {
-            cancel_write(i, d);
+            release_lock(i, d);
             continue;
         }
 
@@ -1311,69 +1474,115 @@ transaction :: resize_to_hold(uint64_t seqno)
 }
 
 void
-transaction :: acquire_read_lock(uint64_t seqno, daemon* d)
+transaction :: acquire_lock(uint64_t seqno, daemon* d)
 {
     assert(seqno < m_ops.size());
-    const uint64_t now = po6::monotonic_time();
+    operation& op(m_ops[seqno]);
 
-    if (m_ops[seqno].read_timestamp + d->resend_interval() > now)
+    if (op.lock_nonce == 0)
     {
-        return;
+        daemon::lock_op_map_t::state_reference sr;
+        kvs_lock_op* kv = d->create_lock_op(&sr);
+        kv->callback_transaction(m_tg, seqno, &transaction::callback_locked);
+        kv->doit(op.lock_type, LOCK_LOCK, op.table, op.key, m_tg.txid, d);
+        op.lock_nonce = kv->state_key();
     }
-
-    m_ops[seqno].read_timestamp = now;
-    const e::slice& table(m_ops[seqno].table);
-    const e::slice& key(m_ops[seqno].key);
-    const size_t sz = BUSYBEE_HEADER_SIZE
-                    + pack_size(KVS_RD_LOCK)
-                    + pack_size(m_tg)
-                    + sizeof(uint64_t)
-                    + pack_size(table)
-                    + pack_size(key);
-    std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
-    msg->pack_at(BUSYBEE_HEADER_SIZE)
-        << KVS_RD_LOCK << m_tg << seqno << table << key;
-    d->send(d->get_config()->choose_kvs(m_group.dc), msg);
 }
 
 void
-transaction :: release_read_lock(uint64_t seqno, daemon* d)
+transaction :: release_lock(uint64_t seqno, daemon* d)
 {
     assert(seqno < m_ops.size());
-    const uint64_t now = po6::monotonic_time();
+    operation& op(m_ops[seqno]);
 
-    if (m_ops[seqno].read_timestamp + d->resend_interval() > now)
+    if (op.lock_nonce == 0)
     {
-        return;
+        daemon::lock_op_map_t::state_reference sr;
+        kvs_lock_op* kv = d->create_lock_op(&sr);
+        kv->callback_transaction(m_tg, seqno, &transaction::callback_unlocked);
+        kv->doit(op.lock_type, LOCK_UNLOCK, op.table, op.key, m_tg.txid, d);
+        op.lock_nonce = kv->state_key();
     }
-
-    m_ops[seqno].read_timestamp = now;
-    const e::slice& table(m_ops[seqno].table);
-    const e::slice& key(m_ops[seqno].key);
-    const size_t sz = BUSYBEE_HEADER_SIZE
-                    + pack_size(KVS_RD_UNLOCK)
-                    + pack_size(m_tg)
-                    + sizeof(uint64_t)
-                    + pack_size(table)
-                    + pack_size(key);
-    std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
-    msg->pack_at(BUSYBEE_HEADER_SIZE)
-        << KVS_RD_UNLOCK << m_tg << seqno << table << key;
-    d->send(d->get_config()->choose_kvs(m_group.dc), msg);
 }
 
+void
+transaction :: start_read(uint64_t seqno, daemon* d)
+{
+    assert(seqno < m_ops.size());
+    operation& op(m_ops[seqno]);
+
+    if (op.read_nonce == 0)
+    {
+        daemon::read_map_t::state_reference sr;
+        kvs_read* kv = d->create_read(&sr);
+        kv->callback_transaction(m_tg, seqno, &transaction::callback_read);
+        kv->read(op.table, op.key, UINT64_MAX, d);
+        op.read_nonce = kv->state_key();
+    }
+}
+
+void
+transaction :: start_write(uint64_t seqno, daemon* d)
+{
+    assert(seqno < m_ops.size());
+    operation& op(m_ops[seqno]);
+
+    if (op.write_nonce == 0)
+    {
+        daemon::write_map_t::state_reference sr;
+        kvs_write* kv = d->create_write(&sr);
+        kv->callback_transaction(m_tg, seqno, &transaction::callback_write);
+        kv->write(0/*XXX*/, op.table, op.key, m_timestamp, op.value, d);
+        op.write_nonce = kv->state_key();
+    }
+}
+
+void
+transaction :: start_verify_read(uint64_t seqno, daemon* d)
+{
+    assert(seqno < m_ops.size());
+    operation& op(m_ops[seqno]);
+
+    if (op.verify_read_nonce == 0)
+    {
+        daemon::read_map_t::state_reference sr;
+        kvs_read* kv = d->create_read(&sr);
+        kv->callback_transaction(m_tg, seqno, &transaction::callback_verify_read);
+        kv->read(op.table, op.key, UINT64_MAX, d);
+        op.verify_read_nonce = kv->state_key();
+    }
+}
+
+void
+transaction :: start_verify_write(uint64_t seqno, daemon* d)
+{
+    assert(seqno < m_ops.size());
+    operation& op(m_ops[seqno]);
+
+    if (op.verify_write_nonce == 0)
+    {
+        daemon::read_map_t::state_reference sr;
+        kvs_read* kv = d->create_read(&sr);
+        kv->callback_transaction(m_tg, seqno, &transaction::callback_verify_write);
+        kv->read(op.table, op.key, UINT64_MAX, d);
+        op.verify_write_nonce = kv->state_key();
+    }
+}
+
+#if 0
 void
 transaction :: begin_write(uint64_t seqno, daemon* d)
 {
+#if 0
     assert(seqno < m_ops.size());
     const uint64_t now = po6::monotonic_time();
 
-    if (m_ops[seqno].write_timestamp + d->resend_interval() > now)
+    if (m_ops[seqno].time_of_last_write_request + d->resend_interval() > now)
     {
         return;
     }
 
-    m_ops[seqno].write_timestamp = now;
+    m_ops[seqno].time_of_last_write_request = now;
     const e::slice& table(m_ops[seqno].table);
     const e::slice& key(m_ops[seqno].key);
     const size_t sz = BUSYBEE_HEADER_SIZE
@@ -1386,20 +1595,31 @@ transaction :: begin_write(uint64_t seqno, daemon* d)
     msg->pack_at(BUSYBEE_HEADER_SIZE)
         << KVS_WR_BEGIN << m_tg << seqno << table << key;
     d->send(d->get_config()->choose_kvs(m_group.dc), msg);
+#endif
+    // XXX delete below
+
+    if (seqno >= m_ops.size())
+    {
+        return;
+    }
+
+    m_ops[seqno].write_started = true;
+    m_ops[seqno].time_of_last_write_request = 0;
 }
 
 void
 transaction :: finish_write(uint64_t seqno, daemon* d)
 {
+#if 0
     assert(seqno < m_ops.size());
     const uint64_t now = po6::monotonic_time();
 
-    if (m_ops[seqno].write_timestamp + d->resend_interval() > now)
+    if (m_ops[seqno].time_of_last_write_request + d->resend_interval() > now)
     {
         return;
     }
 
-    m_ops[seqno].write_timestamp = now;
+    m_ops[seqno].time_of_last_write_request = now;
     const e::slice& table(m_ops[seqno].table);
     const e::slice& key(m_ops[seqno].key);
     const e::slice& value(m_ops[seqno].value);
@@ -1415,20 +1635,30 @@ transaction :: finish_write(uint64_t seqno, daemon* d)
     msg->pack_at(BUSYBEE_HEADER_SIZE)
         << KVS_WR_FINISH << m_tg << seqno << table << key << m_timestamp << value;
     d->send(d->get_config()->choose_kvs(m_group.dc), msg);
+#endif
+    // XXX delete below
+
+    if (seqno >= m_ops.size())
+    {
+        return;
+    }
+
+    m_ops[seqno].write_finished = true;
 }
 
 void
 transaction :: cancel_write(uint64_t seqno, daemon* d)
 {
+#if 0
     assert(seqno < m_ops.size());
     const uint64_t now = po6::monotonic_time();
 
-    if (m_ops[seqno].write_timestamp + d->resend_interval() > now)
+    if (m_ops[seqno].time_of_last_write_request + d->resend_interval() > now)
     {
         return;
     }
 
-    m_ops[seqno].write_timestamp = now;
+    m_ops[seqno].time_of_last_write_request = now;
     const e::slice& table(m_ops[seqno].table);
     const e::slice& key(m_ops[seqno].key);
     const size_t sz = BUSYBEE_HEADER_SIZE
@@ -1441,7 +1671,18 @@ transaction :: cancel_write(uint64_t seqno, daemon* d)
     msg->pack_at(BUSYBEE_HEADER_SIZE)
         << KVS_WR_CANCEL << m_tg << seqno << table << key;
     d->send(d->get_config()->choose_kvs(m_group.dc), msg);
+#endif
+    // XXX delete below
+
+    if (seqno >= m_ops.size())
+    {
+        return;
+    }
+
+    m_ops[seqno].write_finished = true;
+    work_state_machine(d);
 }
+#endif
 
 std::string
 transaction :: generate_log_entry(uint64_t seqno)

@@ -15,6 +15,7 @@ kvs_state :: to_string(state_t state)
         CSTRINGIFY(REGISTERED);
         CSTRINGIFY(ONLINE);
         CSTRINGIFY(OFFLINE);
+        CSTRINGIFY(RETIRING);
         default:
             return "UNKNOWN";
     }
@@ -76,6 +77,7 @@ consus :: operator << (std::ostream& lhs, const kvs_state::state_t& rhs)
         STRINGIFYNS(kvs_state, REGISTERED);
         STRINGIFYNS(kvs_state, ONLINE);
         STRINGIFYNS(kvs_state, OFFLINE);
+        STRINGIFYNS(kvs_state, RETIRING);
         default:
             lhs << "unknown";
     }

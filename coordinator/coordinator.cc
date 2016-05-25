@@ -84,6 +84,8 @@ coordinator :: coordinator()
     , m_kvss()
     , m_kvs_quiescence_counter(0)
     , m_kvss_changed(false)
+    , m_rings()
+    , m_migrated()
 {
 }
 
@@ -121,7 +123,7 @@ coordinator :: init(rsm_context* ctx, uint64_t token)
 void
 coordinator :: invariant_check(rsm_context* ctx)
 {
-    INVARIANT(m_dc_default == data_center_id() || get_data_center(m_dc_default));
+    //XXX INVARIANT(m_dc_default == data_center_id() || get_data_center(m_dc_default));
 
     for (size_t i = 0; i < m_dcs.size(); ++i)
     {
@@ -130,13 +132,13 @@ coordinator :: invariant_check(rsm_context* ctx)
 
     for (size_t i = 0; i < m_txmans.size(); ++i)
     {
-        INVARIANT(get_data_center(m_txmans[i].tx.dc));
+        //XXX INVARIANT(get_data_center(m_txmans[i].tx.dc));
     }
 
     for (size_t i = 0; i < m_txman_groups.size(); ++i)
     {
         INVARIANT(m_txman_groups[i].id.get() < m_counter);
-        INVARIANT(get_data_center(m_txman_groups[i].dc));
+        //XXX INVARIANT(get_data_center(m_txman_groups[i].dc));
 
         for (unsigned m = 0; m < m_txman_groups[i].members_sz; ++m)
         {
@@ -149,7 +151,7 @@ coordinator :: invariant_check(rsm_context* ctx)
 
     for (size_t i = 0; i < m_kvss.size(); ++i)
     {
-        INVARIANT(get_data_center(m_kvss[i].kv.dc));
+        //XXX INVARIANT(get_data_center(m_kvss[i].kv.dc));
     }
 }
 
@@ -366,23 +368,6 @@ coordinator :: new_kvs(const kvs& k)
     return &m_kvss.back();
 }
 
-#if 0
-consus::ring*
-coordinator :: get_or_create_ring(data_center_id id)
-{
-    for (size_t i = 0; i < m_rings.size(); ++i)
-    {
-        if (m_rings[i].dc == id)
-        {
-            return &m_rings[i];
-        }
-    }
-
-    m_rings.push_back(ring(id));
-    return &m_rings.back();
-}
-#endif
-
 void
 coordinator :: kvs_register(rsm_context* ctx, const kvs& k)
 {
@@ -499,33 +484,56 @@ coordinator :: kvs_offline(rsm_context* ctx, comm_id id, const po6::net::locatio
 }
 
 void
+coordinator :: kvs_migrated(rsm_context*, partition_id id)
+{
+    m_migrated.push_back(id);
+}
+
+void
 coordinator :: tick(rsm_context* ctx)
 {
+    const unsigned TXMAN_TICK_LIMIT = 5;
+    const unsigned KVS_TICK_LIMIT = 5;
     ++m_txman_quiescence_counter;
+    bool changed = false;
 
-    if (m_txman_quiescence_counter > 5 && m_txmans_changed)
+    if (m_txman_quiescence_counter >= TXMAN_TICK_LIMIT && m_txmans_changed)
     {
         rsm_log(ctx, "regenerating paxos groups because of recent changes to transaction manager availability");
         regenerate_paxos_groups(ctx);
-        generate_next_configuration(ctx);
         m_txmans_changed = false;
+        changed = true;
     }
     else if (m_txmans_changed)
     {
-        rsm_log(ctx, "delaying regeneration of paxos groups because transaction managers' availability has not quiesced");
+        rsm_log(ctx, "delaying regeneration of paxos groups because transaction managers' availability has not quiesced (regenerating in %d ticks)", TXMAN_TICK_LIMIT - m_txman_quiescence_counter);
+    }
+
+    if (!m_migrated.empty())
+    {
+        if (finish_migrations(ctx))
+        {
+            changed = true;
+        }
     }
 
     ++m_kvs_quiescence_counter;
 
-    if (m_kvs_quiescence_counter > 5 && m_kvss_changed)
+    if (m_kvs_quiescence_counter >= KVS_TICK_LIMIT && m_kvss_changed)
     {
         rsm_log(ctx, "restructuring rings because of recent changes to key-value store availability");
-        // XXX
+        maintain_kvs_rings(ctx);
         m_kvss_changed = false;
+        changed = true;
     }
     else if (m_kvss_changed)
     {
-        rsm_log(ctx, "delaying ring restructuring because key-value stores' availability has not quiesced");
+        rsm_log(ctx, "delaying ring restructuring because key-value stores' availability has not quiesced (regenerating in %d ticks)", KVS_TICK_LIMIT - m_kvs_quiescence_counter);
+    }
+
+    if (changed)
+    {
+        generate_next_configuration(ctx);
     }
 }
 
@@ -611,7 +619,7 @@ coordinator :: generate_next_configuration(rsm_context* ctx)
     // kvs configuration
     std::string kvsconf;
     e::packer(&kvsconf)
-        << m_cluster << m_version << m_flags << m_kvss;
+        << m_cluster << m_version << m_flags << m_kvss << m_rings;
     rsm_cond_broadcast_data(ctx, "kvsconf", kvsconf.data(), kvsconf.size());
 }
 
@@ -793,49 +801,323 @@ coordinator :: regenerate_paxos_groups(rsm_context*)
     }
 }
 
-#if 0
 namespace
 {
 using namespace consus;
 
 void
-select_by_data_center(const std::vector<kvs_state>& kvss,
-                      data_center_id id,
-                      std::vector<comm_id>* ids)
+select_active_by_data_center(const std::vector<kvs_state>& kvss,
+                             data_center_id id,
+                             std::vector<comm_id>* ids)
 {
     for (size_t i = 0; i < kvss.size(); ++i)
     {
-        if (kvss[i].kv.dc == id)
+        if (kvss[i].kv.dc == id &&
+            kvss[i].state > kvs_state::REGISTERED &&
+            kvss[i].state < kvs_state::RETIRING)
         {
             ids->push_back(kvss[i].kv.id);
         }
     }
 }
 
-void
-expand_to_constant(std::vector<comm_id>& ids,
-                   comm_id* out, size_t out_sz)
+template <typename T>
+unsigned
+compute_partition_count(T parts[CONSUS_KVS_PARTITIONS])
 {
-    if (ids.size() >= out_sz)
+    unsigned idx = 0;
+    unsigned partitions = 0;
+
+    while (idx < CONSUS_KVS_PARTITIONS)
     {
-        std::copy(ids.begin(), ids.begin() + out_sz, out);
-        return;
-    }
+        unsigned end = idx + 1;
 
-    const size_t per = out_sz / ids.size();
-    const size_t lim = out_sz % ids.size();
-    size_t start = 0;
-
-    for (size_t i = 0; i < ids.size(); ++i)
-    {
-        const size_t limit = start + per + (i < lim ? 1 : 0);
-
-        for (size_t j = start; j < limit; ++j)
+        while (end < CONSUS_KVS_PARTITIONS &&
+               parts[idx] == parts[end])
         {
-            out[j] = ids[i];
+            ++end;
         }
 
-        start = limit;
+        ++partitions;
+        idx = end;
+    }
+
+    return partitions;
+}
+
+void
+map_owners_to_indices(comm_id owners[CONSUS_KVS_PARTITIONS],
+                      unsigned partitions[CONSUS_KVS_PARTITIONS])
+{
+    unsigned idx = 0;
+    unsigned count = 0;
+
+    while (idx < CONSUS_KVS_PARTITIONS)
+    {
+        unsigned end = idx;
+
+        while (end < CONSUS_KVS_PARTITIONS &&
+               owners[idx] == owners[end])
+        {
+            partitions[end] = count;
+            ++end;
+        }
+
+        ++count;
+        idx = end;
+    }
+}
+
+void
+evenly_distribute_indices(unsigned count,
+                          unsigned partitions[CONSUS_KVS_PARTITIONS])
+{
+    for (size_t i = 0; i < CONSUS_KVS_PARTITIONS; ++i)
+    {
+        partitions[i] = 0;
+    }
+
+    const unsigned size = CONSUS_KVS_PARTITIONS / count;
+    const unsigned excess = CONSUS_KVS_PARTITIONS % count;
+    unsigned idx = 0;
+
+    for (size_t i = 0; i < count; ++i)
+    {
+        const unsigned this_size = size + (i < excess ? 1 : 0);
+
+        for (size_t j = 0; j < this_size; ++j)
+        {
+            partitions[idx + j] = i;
+        }
+
+        idx += this_size;
+    }
+
+    assert(partitions[CONSUS_KVS_PARTITIONS - 1] == count - 1);
+}
+
+void
+stable_marriage(comm_id current_owners[CONSUS_KVS_PARTITIONS],
+                comm_id new_owners[CONSUS_KVS_PARTITIONS],
+                unsigned new_partitions)
+{
+    // map CONSUS_KVS_PARTITIONS buckets onto a smaller number of buckets (the
+    // value of each element in the arrays)
+    unsigned part1[CONSUS_KVS_PARTITIONS];
+    unsigned part2[CONSUS_KVS_PARTITIONS];
+    // label each contiguous block of owners with a unique id
+    map_owners_to_indices(current_owners, part1);
+    // create an ideal distribution of N partitions
+    evenly_distribute_indices(new_partitions, part2);
+    const unsigned n1 = compute_partition_count(part1);
+    const unsigned n2 = new_partitions;
+    assert(n2 == compute_partition_count(part2));
+    // preference weights for the stable marriage algorithm
+    // prefs1: part1/current for part2/new
+    // prefs2: part2/new for part1/current
+    std::map<std::pair<unsigned, unsigned>, unsigned> prefs1;
+    std::map<std::pair<unsigned, unsigned>, unsigned> prefs2;
+
+    for (size_t i = 0; i < CONSUS_KVS_PARTITIONS; ++i)
+    {
+        ++prefs1[std::make_pair(part1[i], part2[i])];
+        ++prefs2[std::make_pair(part2[i], part1[i])];
+    }
+
+    // who is assigned to whom; matches part1/part2
+    // assign1: values [0:n1] value CONSUS_KVS_PARTITIONS means unassigned
+    // assign2: values [0:n2] value CONSUS_KVS_PARTITIONS means unassigned
+    // it's sized CONSUS_KVS_PARTITIONS for static allocation
+    unsigned assign1[CONSUS_KVS_PARTITIONS];
+    unsigned assign2[CONSUS_KVS_PARTITIONS];
+
+    for (size_t i = 0; i < CONSUS_KVS_PARTITIONS; ++i)
+    {
+        assign1[i] = CONSUS_KVS_PARTITIONS;
+        assign2[i] = CONSUS_KVS_PARTITIONS;
+    }
+
+    std::set<std::pair<unsigned, unsigned> > proposals;
+
+    while (true)
+    {
+        // if either assign1 or assign2 is completely mapped
+        if (std::find(assign1, assign1 + n1, CONSUS_KVS_PARTITIONS) == assign1 + n1 ||
+            std::find(assign2, assign2 + n2, CONSUS_KVS_PARTITIONS) == assign2 + n2)
+        {
+            break;
+        }
+
+        // consider everyone in the first group
+        for (unsigned idx1 = 0; idx1 < n1; ++idx1)
+        {
+            // if already matched
+            if (assign1[idx1] < CONSUS_KVS_PARTITIONS)
+            {
+                continue;
+            }
+
+            unsigned best_candidate = CONSUS_KVS_PARTITIONS;
+            unsigned best_preference = 0;
+
+            // consider everyone in the second group
+            for (unsigned idx2 = 0; idx2 < n2; ++idx2)
+            {
+                // if there's already a proposal from 1->2
+                if (proposals.find(std::make_pair(idx1, idx2)) != proposals.end())
+                {
+                    continue;
+                }
+
+                std::map<std::pair<unsigned, unsigned>, unsigned>::iterator it;
+                it = prefs1.find(std::make_pair(idx1, idx2));
+                // what's idx1's preference for idx2?
+                const unsigned preference = it != prefs1.end() ? it->second : 0;
+
+                // pick
+                if (best_candidate == CONSUS_KVS_PARTITIONS ||
+                    best_preference < preference)
+                {
+                    best_candidate = idx2;
+                    best_preference = preference;
+                }
+            }
+
+            // if no one to propose to
+            if (best_candidate == CONSUS_KVS_PARTITIONS)
+            {
+                continue;
+            }
+
+            proposals.insert(std::make_pair(idx1, best_candidate));
+
+            // if idx1's preference is unmatched, match them
+            if (assign2[best_candidate] == CONSUS_KVS_PARTITIONS)
+            {
+                assign1[idx1] = best_candidate;
+                assign2[best_candidate] = idx1;
+            }
+            else
+            {
+                std::map<std::pair<unsigned, unsigned>, unsigned>::iterator it;
+                it = prefs2.find(std::make_pair(best_candidate, assign2[best_candidate]));
+                // candidate's preference for its current match
+                const unsigned cur_preference = it != prefs2.end() ? it->second : 0;
+                it = prefs2.find(std::make_pair(best_candidate, idx1));
+                // candidate's preference for idx1
+                const unsigned new_preference = it != prefs2.end() ? it->second : 0;
+
+                // trade up
+                if (cur_preference < new_preference)
+                {
+                    assign1[assign2[best_candidate]] = CONSUS_KVS_PARTITIONS;
+                    assign1[idx1] = best_candidate;
+                    assign2[best_candidate] = idx1;
+                }
+            }
+        }
+    }
+
+    // fill in new owners
+    for (size_t i = 0; i < CONSUS_KVS_PARTITIONS; ++i)
+    {
+        assert(part2[i] < n2);
+
+        // if this bucket is unassigned
+        if (assign2[part2[i]] == CONSUS_KVS_PARTITIONS)
+        {
+            new_owners[i] = comm_id();
+            continue;
+        }
+
+        // find an element in part1 with the value this partition matches
+        assert(assign2[part2[i]] < n1);
+        unsigned* const ptr = std::find(part1, part1 + CONSUS_KVS_PARTITIONS, assign2[part2[i]]);
+        const unsigned idx = ptr - part1;
+        assert(idx < CONSUS_KVS_PARTITIONS);
+        new_owners[i] = current_owners[idx];
+    }
+}
+
+void
+unassign_discontinuous(comm_id old_owners[CONSUS_KVS_PARTITIONS],
+                       comm_id new_owners[CONSUS_KVS_PARTITIONS])
+{
+    std::map<comm_id, unsigned> counts;
+    comm_id* ptr = new_owners;
+    comm_id* const end = ptr + CONSUS_KVS_PARTITIONS;
+
+    while (ptr < end)
+    {
+        // find the contiguous size of this assignment
+        comm_id* tmp = ptr;
+        // how many partitions are the same in old and new
+        unsigned maintained = 0;
+
+        while (tmp < end && *tmp == *ptr)
+        {
+            if (old_owners[tmp - new_owners] == *ptr)
+            {
+                ++maintained;
+            }
+
+            ++tmp;
+        }
+
+        // look for any previous range assigned to *ptr
+        std::map<comm_id, unsigned>::iterator it = counts.find(*ptr);
+
+        // if *ptr was previously assigned and previous assignment maintained
+        // fewer partitions
+        if (it != counts.end() && it->second < maintained)
+        {
+            for (comm_id* c = new_owners; c < ptr; ++c)
+            {
+                if (*c == *ptr)
+                {
+                    *c = comm_id();
+                }
+            }
+
+            it->second = maintained;
+        }
+        else if (it == counts.end())
+        {
+            counts.insert(std::make_pair(*ptr, maintained));
+        }
+
+        ptr = tmp;
+    }
+}
+
+void
+assign_unassigned(comm_id owners[CONSUS_KVS_PARTITIONS], comm_id* kvs, size_t kvs_sz)
+{
+    comm_id* const owners_end = owners + CONSUS_KVS_PARTITIONS;
+    unsigned part[CONSUS_KVS_PARTITIONS];
+    evenly_distribute_indices(kvs_sz, part);
+
+    for (size_t i = 0; i < kvs_sz; ++i)
+    {
+        if (std::find(owners, owners_end, kvs[i]) != owners_end)
+        {
+            continue;
+        }
+
+        unsigned fill = CONSUS_KVS_PARTITIONS;
+
+        for (size_t j = 0; j < CONSUS_KVS_PARTITIONS; ++j)
+        {
+            if (owners[j] == comm_id() && fill == CONSUS_KVS_PARTITIONS)
+            {
+                fill = part[j];
+            }
+
+            if (part[j] == fill && owners[j] == comm_id())
+            {
+                owners[j] = kvs[i];
+            }
+        }
     }
 }
 
@@ -897,7 +1179,7 @@ log_assignments(rsm_context* ctx, const std::string& name, std::vector<assignmen
 }
 
 void
-log_reassignments(rsm_context* ctx, const std::string& name, std::vector<reassignment>* reassignments)
+log_reassignments(rsm_context* ctx, const char* verb, const std::string& name, std::vector<reassignment>* reassignments)
 {
     std::sort(reassignments->begin(), reassignments->end());
     reassignment* ptr = &(*reassignments)[0];
@@ -917,14 +1199,14 @@ log_reassignments(rsm_context* ctx, const std::string& name, std::vector<reassig
 
         if (ptr + 1 == eor)
         {
-            rsm_log(ctx, "reassigning partition %u from kvs(%" PRIu64 ") to kvs(%" PRIu64 ") in data center \"%s\"\n",
-                         ptr->p, ptr->f.get(), ptr->t.get(), e::strescape(name).c_str());
+            rsm_log(ctx, "%s partition %u from kvs(%" PRIu64 ") to kvs(%" PRIu64 ") in data center \"%s\"\n",
+                         verb, ptr->p, ptr->f.get(), ptr->t.get(), e::strescape(name).c_str());
         }
         else
         {
             assert(ptr != eor);
-            rsm_log(ctx, "reassigning partitions %u-%u from kvs(%" PRIu64 ") to kvs(%" PRIu64 ") in data center \"%s\"\n",
-                         ptr->p, (eor - 1)->p, ptr->f.get(), ptr->t.get(), e::strescape(name).c_str());
+            rsm_log(ctx, "%s partitions %u-%u from kvs(%" PRIu64 ") to kvs(%" PRIu64 ") in data center \"%s\"\n",
+                         verb, ptr->p, (eor - 1)->p, ptr->f.get(), ptr->t.get(), e::strescape(name).c_str());
         }
 
         ptr = eor;
@@ -933,56 +1215,106 @@ log_reassignments(rsm_context* ctx, const std::string& name, std::vector<reassig
 
 } // namespace
 
+ring*
+coordinator :: get_or_create_ring(data_center_id id)
+{
+    for (size_t i = 0; i < m_rings.size(); ++i)
+    {
+        if (m_rings[i].dc == id)
+        {
+            return &m_rings[i];
+        }
+    }
+
+    m_rings.push_back(ring(id));
+    return &m_rings.back();
+}
+
 void
 coordinator :: maintain_kvs_rings(rsm_context* ctx)
 {
+    // XXX ensure this algorithm will never create a cycle of migrations, where
+    // vertices are servers and directed edges are src->dst migrations
+
     for (size_t i = 0; i < m_dcs.size(); ++i)
     {
-        std::vector<comm_id> kvss;
-        select_by_data_center(m_kvss, m_dcs[i].id, &kvss);
-        comm_id partitions[CONSUS_KVS_PARTITIONS];
-        expand_to_constant(kvss, partitions, CONSUS_KVS_PARTITIONS);
         ring* r = get_or_create_ring(m_dcs[i].id);
+        std::vector<comm_id> kvss;
+        select_active_by_data_center(m_kvss, m_dcs[i].id, &kvss);
+
+        if (kvss.empty())
+        {
+            continue;
+        }
+
+        comm_id current_owners[CONSUS_KVS_PARTITIONS];
+        r->get_owners(current_owners);
+        comm_id new_owners[CONSUS_KVS_PARTITIONS];
+        stable_marriage(current_owners, new_owners, kvss.size());
+        unassign_discontinuous(current_owners, new_owners);
+        assign_unassigned(new_owners, &kvss[0], kvss.size());
+        r->set_owners(new_owners, &m_counter);
         std::vector<assignment> assignments;
         std::vector<reassignment> reassignments;
 
-        for (size_t p = 0; p < CONSUS_KVS_PARTITIONS; ++p)
+        for (unsigned p = 0; p < CONSUS_KVS_PARTITIONS; ++p)
         {
-            if (r->partitions[p].assigned == comm_id())
+            if (new_owners[p] == comm_id())
             {
-                assignments.push_back(assignment(p, partitions[p]));
-                r->partitions[p].assigned = partitions[p];
-                ++r->partitions[p].version; 
+                continue;
             }
-            else if (r->partitions[p].assigned != partitions[p])
+
+            if (current_owners[p] == comm_id())
             {
-                reassignments.push_back(reassignment(p, r->partitions[p].assigned, partitions[p]));
+                assignments.push_back(assignment(p, new_owners[p]));
+            }
+            else if (current_owners[p] != new_owners[p])
+            {
+                reassignments.push_back(reassignment(p, current_owners[p], new_owners[p]));
             }
         }
 
         log_assignments(ctx, m_dcs[i].name, &assignments);
-        log_reassignments(ctx, m_dcs[i].name, &reassignments);
-
-#if 0
-#if 0
-                ring_changed = true;
-
-#endif
-#if 0
-                ring_changed = true;
-
-                rsm_log(ctx, "assigning partition(%u) to kvs(%" PRIu64 ") in data center \"%s\"\n",
-                             p, partitions[p].get(), e::strescape(m_dcs[i].name).c_str());
-                rsm_log(ctx, "assigning kvs(%" PRIu64 ") to partition(%u) in data center \"%s\"\n",
-                             partitions[p].get(), p, e::strescape(m_dcs[i].name).c_str());
-                rsm_log(ctx, "re-assigning partition(%u) from kvs(%" PRIu64 " to kvs(%" PRIu64 ") in data center \"%s\"\n",
-                             p, r->partitions[p].assigned.get(), partitions[p].get(), e::strescape(m_dcs[i].name).c_str());
-#endif
-        if (ring_changed)
-        {
-            ++r->version;
-        }
-#endif
+        log_reassignments(ctx, "reassigning", m_dcs[i].name, &reassignments);
     }
 }
-#endif
+
+bool
+coordinator :: finish_migrations(rsm_context* ctx)
+{
+    std::sort(m_migrated.begin(), m_migrated.end());
+    std::vector<partition_id>::iterator pit;
+    pit = std::unique(m_migrated.begin(), m_migrated.end());
+    m_migrated.resize(pit - m_migrated.begin());
+    bool ret = false;
+
+    for (size_t i = 0; i < m_rings.size(); ++i)
+    {
+        std::vector<reassignment> reassignments;
+
+        for (unsigned p = 0; p < CONSUS_KVS_PARTITIONS; ++p)
+        {
+            partition* part = &m_rings[i].partitions[p];
+
+            if (part->next_id != partition_id() &&
+                std::binary_search(m_migrated.begin(),
+                                   m_migrated.end(),
+                                   part->next_id))
+            {
+                reassignments.push_back(reassignment(p, part->owner, part->next_owner));
+                part->id = part->next_id;
+                part->owner = part->next_owner;
+                part->next_id = partition_id();
+                part->next_owner = comm_id();
+            }
+        }
+
+        data_center* dc = get_data_center(m_rings[i].dc);
+        assert(dc);
+        log_reassignments(ctx, "migrated", dc->name, &reassignments);
+        ret = ret || !reassignments.empty();
+    }
+
+    m_migrated.clear();
+    return ret;
+}

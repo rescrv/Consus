@@ -32,5 +32,6 @@ CREATE_ID(version)
 CREATE_ID(comm)
 CREATE_ID(paxos_group)
 CREATE_ID(data_center)
+CREATE_ID(partition)
 
 END_CONSUS_NAMESPACE

@@ -21,9 +21,16 @@
 // sufficiently large deployment that you should probably think about tasking a
 // few developers with making the change, testing it, and giving any
 // changes/fixes back to the project.
+//
+// Constant-Specific assumptions:
+//  - common/partition.h
+//  - assumed to fit in an unsigned int
+//  - assumed to be this exact value in daemon::choose_index
 #define CONSUS_KVS_PARTITIONS 65536
 
 #define CONSUS_VOTE_ABORT 0x61626f7274000000ULL
 #define CONSUS_VOTE_COMMIT 0x636f6d6d69740000ULL
+
+#define CONSUS_WRITE_TOMBSTONE 1
 
 #endif // consus_common_constants_h_

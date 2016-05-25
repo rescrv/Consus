@@ -1,6 +1,10 @@
 // Copyright (c) 2015, Robert Escriva
 // All rights reserved.
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 // C
 #include <limits.h>
 #include <stdio.h>
@@ -40,9 +44,10 @@
 
 using consus::daemon;
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
+// XXX each and every BUSYBEE_DISRUPTED event must trigger associated retries or
+// cleanups.  Most notably in the kvs_* functions
+
+// XXX each op should be periodically pumped
 
 #define CHECK_UNPACK(MSGTYPE, UNPACKER) \
     do \
@@ -142,6 +147,7 @@ daemon :: coordinator_callback :: new_config(const char* data, size_t data_sz)
     }
 
     configuration* old_config = d->get_config();
+    d->m_us.dc = c->get_data_center(d->m_us.id);
     e::atomic::store_ptr_release(&d->m_config, c.release());
     d->m_gc.collect(old_config, e::garbage_collector::free_ptr<configuration>);
     LOG(INFO) << "updating to configuration " << d->get_config()->version();
@@ -223,8 +229,11 @@ daemon :: daemon()
     , m_local_voters(&m_gc)
     , m_global_voters(&m_gc)
     , m_dispositions(&m_gc)
+    , m_readers(&m_gc)
+    , m_writers(&m_gc)
+    , m_lock_ops(&m_gc)
     , m_log()
-    , m_durable_thread(po6::threads::make_thread_wrapper(&daemon::durable, this))
+    , m_durable_thread(po6::threads::make_obj_func(&daemon::durable, this))
     , m_durable_mtx()
     , m_durable_up_to(-1)
     , m_durable_msgs()
@@ -334,7 +343,7 @@ daemon :: run(bool background,
     for (size_t i = 0; i < threads; ++i)
     {
         using namespace po6::threads;
-        e::compat::shared_ptr<thread> t(new thread(make_thread_wrapper(&daemon::loop, this, i)));
+        e::compat::shared_ptr<thread> t(new thread(make_obj_func(&daemon::loop, this, i)));
         m_threads.push_back(t);
         t->start();
     }
@@ -477,6 +486,15 @@ daemon :: loop(size_t thread)
 
         switch (mt)
         {
+            case UNSAFE_READ:
+                process_unsafe_read(id, msg, up);
+                break;
+            case UNSAFE_WRITE:
+                process_unsafe_write(id, msg, up);
+                break;
+            case UNSAFE_LOCK_OP:
+                process_unsafe_lock_op(id, msg, up);
+                break;
             case TXMAN_BEGIN:
                 process_begin(id, msg, up);
                 break;
@@ -531,26 +549,29 @@ daemon :: loop(size_t thread)
             case GV_VOTE_2B:
                 process_gv_vote_2b(id, msg, up);
                 break;
-            case KVS_RD_LOCKED:
-                process_kvs_rd_locked(id, msg, up);
+            case KVS_REP_RD_RESP:
+                process_kvs_rep_rd_resp(id, msg, up);
                 break;
-            case KVS_RD_UNLOCKED:
-                process_kvs_rd_unlocked(id, msg, up);
+            case KVS_REP_WR_RESP:
+                process_kvs_rep_wr_resp(id, msg, up);
                 break;
-            case KVS_WR_BEGUN:
-                process_kvs_wr_begun(id, msg, up);
-                break;
-            case KVS_WR_FINISHED:
-                process_kvs_wr_finished(id, msg, up);
+            case KVS_LOCK_OP_RESP:
+                process_kvs_lock_op_resp(id, msg, up);
                 break;
             case CONSUS_NOP:
                 break;
-            case KVS_RD_LOCK:
-            case KVS_RD_UNLOCK:
-            case KVS_WR_BEGIN:
-            case KVS_WR_FINISH:
-            case KVS_WR_CANCEL:
             case CLIENT_RESPONSE:
+            case KVS_REP_RD:
+            case KVS_REP_WR:
+            case KVS_RAW_RD:
+            case KVS_RAW_RD_RESP:
+            case KVS_RAW_WR:
+            case KVS_RAW_WR_RESP:
+            case KVS_LOCK_OP:
+            case KVS_RAW_LK:
+            case KVS_RAW_LK_RESP:
+            case KVS_MIGRATE_SYN:
+            case KVS_MIGRATE_ACK:
             default:
                 LOG(INFO) << "received " << mt << " message which transaction-managers do not process";
                 break;
@@ -568,6 +589,115 @@ daemon :: loop(size_t thread)
 
     m_gc.deregister_thread(&ts);
     LOG(INFO) << "network thread shutting down";
+}
+
+void
+daemon :: process_unsafe_read(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
+{
+    uint64_t client_nonce;
+    e::slice table;
+    e::slice key;
+    up = up >> e::unpack_varint(client_nonce) >> table >> key;
+    CHECK_UNPACK(UNSAFE_READ, up);
+    read_map_t::state_reference sr;
+    kvs_read* kv = create_read(&sr);
+    kv->callback_client(id, client_nonce);
+    kv->read(table, key, UINT64_MAX, this);
+}
+
+consus::kvs_read*
+daemon :: create_read(read_map_t::state_reference* sr)
+{
+    while (true)
+    {
+        uint64_t kv_nonce = generate_nonce();
+
+        if (kv_nonce == 0)
+        {
+            continue;
+        }
+
+        kvs_read* kv = m_readers.create_state(kv_nonce, sr);
+
+        if (kv)
+        {
+            return kv;
+        }
+    }
+}
+
+void
+daemon :: process_unsafe_write(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
+{
+    uint64_t client_nonce;
+    uint8_t flags;
+    e::slice table;
+    e::slice key;
+    e::slice value;
+    up = up >> e::unpack_varint(client_nonce) >> flags >> table >> key >> value;
+    CHECK_UNPACK(UNSAFE_WRITE, up);
+    write_map_t::state_reference sr;
+    kvs_write* kv = create_write(&sr);
+    kv->callback_client(id, client_nonce);
+    const uint64_t timestamp = po6::wallclock_time();
+    kv->write(flags, table, key, timestamp, value, this);
+}
+
+consus::kvs_write*
+daemon :: create_write(write_map_t::state_reference* sr)
+{
+    while (true)
+    {
+        uint64_t kv_nonce = generate_nonce();
+
+        if (kv_nonce == 0)
+        {
+            continue;
+        }
+
+        kvs_write* kv = m_writers.create_state(kv_nonce, sr);
+
+        if (kv)
+        {
+            return kv;
+        }
+    }
+}
+
+void
+daemon :: process_unsafe_lock_op(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
+{
+    uint64_t client_nonce;
+    e::slice table;
+    e::slice key;
+    lock_op op;
+    up = up >> e::unpack_varint(client_nonce) >> table >> key >> op;
+    CHECK_UNPACK(UNSAFE_LOCK_OP, up);
+    lock_op_map_t::state_reference sr;
+    kvs_lock_op* kv = create_lock_op(&sr);
+    kv->callback_client(id, client_nonce);
+    kv->doit(LOCK_EXCL, op, table, key, transaction_id(), this);
+}
+
+consus::kvs_lock_op*
+daemon :: create_lock_op(lock_op_map_t::state_reference* sr)
+{
+    while (true)
+    {
+        uint64_t kv_nonce = generate_nonce();
+
+        if (kv_nonce == 0)
+        {
+            continue;
+        }
+
+        kvs_lock_op* kv = m_lock_ops.create_state(kv_nonce, sr);
+
+        if (kv)
+        {
+            return kv;
+        }
+    }
 }
 
 void
@@ -986,93 +1116,55 @@ daemon :: process_gv_vote_2b(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
 }
 
 void
-daemon :: process_kvs_rd_locked(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
+daemon :: process_kvs_rep_rd_resp(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
-    transaction_group tg;
-    uint64_t seqno;
+    uint64_t nonce;
     consus_returncode rc;
     uint64_t timestamp;
     e::slice value;
-    up = up >> tg >> seqno >> rc >> timestamp >> value;
-    CHECK_UNPACK(KVS_RD_LOCKED, up);
+    up = up >> nonce >> rc >> timestamp >> value;
+    CHECK_UNPACK(KVS_REP_RD_RESP, up);
 
-    if (s_debug_mode)
+    read_map_t::state_reference ksr;
+    kvs_read* kv = m_readers.get_state(nonce, &ksr);
+
+    if (kv)
     {
-        LOG(INFO) << tg << "[" << seqno << "] kvs returned " << rc << " from " << id;
-    }
-
-    transaction_map_t::state_reference tsr;
-    transaction* xact = m_transactions.get_state(tg, &tsr);
-
-    if (xact)
-    {
-        xact->kvs_rd_locked(seqno, rc, timestamp, value, msg, this);
+        kv->response(rc, timestamp, value, this);
     }
 }
 
 void
-daemon :: process_kvs_rd_unlocked(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
+daemon :: process_kvs_rep_wr_resp(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
-    transaction_group tg;
-    uint64_t seqno;
-    up = up >> tg >> seqno;
-    CHECK_UNPACK(KVS_RD_UNLOCKED, up);
+    uint64_t nonce;
+    consus_returncode rc;
+    up = up >> nonce >> rc;
+    CHECK_UNPACK(KVS_REP_WR_RESP, up);
 
-    if (s_debug_mode)
+    write_map_t::state_reference ksr;
+    kvs_write* kv = m_writers.get_state(nonce, &ksr);
+
+    if (kv)
     {
-        LOG(INFO) << tg << "[" << seqno << "] lock released from " << id;
-    }
-
-    transaction_map_t::state_reference tsr;
-    transaction* xact = m_transactions.get_state(tg, &tsr);
-
-    if (xact)
-    {
-        xact->kvs_rd_unlocked(seqno, this);
+        kv->response(rc, this);
     }
 }
 
 void
-daemon :: process_kvs_wr_begun(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
+daemon :: process_kvs_lock_op_resp(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
-    transaction_group tg;
-    uint64_t seqno;
-    up = up >> tg >> seqno;
-    CHECK_UNPACK(KVS_WR_BEGUN, up);
+    uint64_t nonce;
+    consus_returncode rc;
+    up = up >> nonce >> rc;
+    CHECK_UNPACK(KVS_LOCK_OP_RESP, up);
 
-    if (s_debug_mode)
+    lock_op_map_t::state_reference ksr;
+    kvs_lock_op* kv = m_lock_ops.get_state(nonce, &ksr);
+
+    if (kv)
     {
-        LOG(INFO) << tg << "[" << seqno << "] write started by " << id;
-    }
-
-    transaction_map_t::state_reference tsr;
-    transaction* xact = m_transactions.get_state(tg, &tsr);
-
-    if (xact)
-    {
-        xact->kvs_wr_begun(seqno, this);
-    }
-}
-
-void
-daemon :: process_kvs_wr_finished(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
-{
-    transaction_group tg;
-    uint64_t seqno;
-    up = up >> tg >> seqno;
-    CHECK_UNPACK(KVS_RD_UNLOCKED, up);
-
-    if (s_debug_mode)
-    {
-        LOG(INFO) << tg << "[" << seqno << "] write finished by " << id;
-    }
-
-    transaction_map_t::state_reference tsr;
-    transaction* xact = m_transactions.get_state(tg, &tsr);
-
-    if (xact)
-    {
-        xact->kvs_wr_finished(seqno, this);
+        kv->response(rc, this);
     }
 }
 
@@ -1088,14 +1180,21 @@ daemon :: debug_dump()
     LOG(ERROR) << "DEBUG DUMP"; // XXX
 }
 
-consus::transaction_id
-daemon :: generate_txid()
+uint64_t
+daemon :: generate_nonce()
 {
     // XXX don't go out of process
     po6::io::fd fd(open("/dev/urandom", O_RDONLY));
     uint64_t x;
     int ret = fd.xread(&x, sizeof(x));
     assert(ret == 8);
+    return x;
+}
+
+consus::transaction_id
+daemon :: generate_txid()
+{
+    uint64_t x = generate_nonce();
     paxos_group_id id;
     std::vector<paxos_group_id> groups(get_config()->groups_for(m_us.id));
     // XXX groups.size() == 0?
@@ -1422,7 +1521,7 @@ daemon :: durable()
 
             if (xact)
             {
-                xact->callback(cbs[i].seqno, this);
+                xact->callback_durable(cbs[i].seqno, this);
             }
         }
     }

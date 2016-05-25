@@ -1,0 +1,314 @@
+#if 0
+void
+daemon :: process_read_lock(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
+{
+    transaction_group tg;
+    uint64_t seqno;
+    e::slice table;
+    e::slice key;
+    up = up >> tg >> seqno >> table >> key;
+    CHECK_UNPACK(KVS_RD_LOCK, up);
+
+    if (s_debug_mode)
+    {
+        LOG(INFO) << "get(\"" << e::strescape(table.str()) << "\", \""
+                  << e::strescape(key.str()) << "\") by "
+                  << tg << "[" << seqno << "]";
+    }
+
+    LOG(INFO) << tg << " request read lock(table=\"" << e::strescape(table.str())
+              << "\", key=\"" << e::strescape(key.str()) << "\"); not implemented (yet)";
+
+    std::string tmp;
+    e::packer(&tmp) << table << key << uint64_t(UINT64_MAX);
+    leveldb::ReadOptions opts;
+    leveldb::Iterator* it = m_db->NewIterator(opts);
+
+    if (!it)
+    {
+        LOG(ERROR) << "fatal LevelDB failure: " << it->status().ToString();
+        e::atomic::increment_32_nobarrier(&s_interrupts, 1);
+        return;
+    }
+
+    e::guard g_it = e::makeguard(e::garbage_collector::free_ptr<leveldb::Iterator>, it);
+    it->Seek(tmp);
+    consus_returncode rc;
+    uint64_t timestamp = 0;
+    e::slice value;
+
+    if (!it->status().ok())
+    {
+        LOG(ERROR) << "fatal LevelDB failure: " << it->status().ToString();
+        e::atomic::increment_32_nobarrier(&s_interrupts, 1);
+        return;
+    }
+
+    leveldb::Slice k;
+
+    if (!it->Valid() || (k = it->key()).size() < 8 ||
+        memcmp(k.data(), tmp.data(), k.size() - 8) != 0)
+    {
+        rc = CONSUS_NOT_FOUND;
+    }
+    else
+    {
+        rc = CONSUS_SUCCESS;
+        e::unpack64be(k.data() + k.size() - 8, &timestamp);
+        leveldb::Slice v = it->value();
+        value = e::slice(v.data(), v.size());
+    }
+
+    const size_t sz = BUSYBEE_HEADER_SIZE
+                    + pack_size(KVS_RD_LOCKED)
+                    + pack_size(tg)
+                    + sizeof(uint64_t)
+                    + pack_size(rc)
+                    + sizeof(uint64_t)
+                    + pack_size(value);
+    msg.reset(e::buffer::create(sz));
+    msg->pack_at(BUSYBEE_HEADER_SIZE)
+        << KVS_RD_LOCKED << tg << seqno << rc << timestamp << value;
+    send(id, msg);
+
+    if (s_debug_mode)
+    {
+        if (rc == CONSUS_SUCCESS)
+        {
+            LOG(INFO) << "timestamp=" << timestamp
+                      << " value=\"" << e::strescape(value.str()) << "\"";
+        }
+        else
+        {
+            LOG(INFO) << "value not found";
+        }
+    }
+}
+
+void
+daemon :: process_read_unlock(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
+{
+    transaction_group tg;
+    uint64_t seqno;
+    e::slice table;
+    e::slice key;
+    up = up >> tg >> seqno >> table >> key;
+    CHECK_UNPACK(KVS_RD_UNLOCK, up);
+
+    //if (s_debug_mode)
+    //{
+        LOG(ERROR) << tg << " request read unlock(table=\"" << e::strescape(table.str())
+                  << "\", key=\"" << e::strescape(key.str()) << "\"); not implemented (yet)";
+    //}
+
+    const size_t sz = BUSYBEE_HEADER_SIZE
+                    + pack_size(KVS_RD_UNLOCKED)
+                    + pack_size(tg)
+                    + sizeof(uint64_t);
+    msg.reset(e::buffer::create(sz));
+    msg->pack_at(BUSYBEE_HEADER_SIZE) << KVS_RD_UNLOCKED << tg << seqno;
+    send(id, msg);
+}
+
+void
+daemon :: process_write_begin(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
+{
+    transaction_group tg;
+    uint64_t seqno;
+    e::slice table;
+    e::slice key;
+    up = up >> tg >> seqno >> table >> key;
+    CHECK_UNPACK(KVS_WR_BEGIN, up);
+
+    //if (s_debug_mode)
+    //{
+        LOG(ERROR) << tg << " request write lock(table=\"" << e::strescape(table.str())
+                  << "\", key=\"" << e::strescape(key.str()) << "\"); not implemented (yet)";
+    //}
+
+    const size_t sz = BUSYBEE_HEADER_SIZE
+                    + pack_size(KVS_WR_BEGUN)
+                    + pack_size(tg)
+                    + sizeof(uint64_t);
+    msg.reset(e::buffer::create(sz));
+    msg->pack_at(BUSYBEE_HEADER_SIZE) << KVS_WR_BEGUN << tg << seqno;
+    send(id, msg);
+}
+
+void
+daemon :: process_write_finish(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
+{
+    transaction_group tg;
+    uint64_t seqno;
+    e::slice table;
+    e::slice key;
+    uint64_t timestamp;
+    e::slice value;
+    up = up >> tg >> seqno >> table >> key >> timestamp >> value;
+    CHECK_UNPACK(KVS_WR_BEGIN, up);
+
+    if (s_debug_mode)
+    {
+        LOG(INFO) << "put(\"" << e::strescape(table.str()) << "\", \""
+                  << e::strescape(key.str()) << "\"@" << timestamp << ", \""
+                  << e::strescape(value.str()) << "\") by "
+                  << tg << "[" << seqno << "]";
+    }
+
+    LOG(INFO) << tg << " request write unlock(table=\"" << e::strescape(table.str())
+              << "\", key=\"" << e::strescape(key.str()) << "\"); not implemented (yet)";
+
+    std::string tmp;
+    e::packer(&tmp) << table << key << timestamp;
+    leveldb::WriteOptions opts;
+    opts.sync = true;
+    leveldb::Status st = m_db->Put(opts, tmp, leveldb::Slice(value.cdata(), value.size()));
+    consus_returncode rc;
+
+    if (st.ok())
+    {
+        rc = CONSUS_SUCCESS;
+    }
+    else
+    {
+        rc = CONSUS_SERVER_ERROR;
+    }
+
+
+    const size_t sz = BUSYBEE_HEADER_SIZE
+                    + pack_size(KVS_WR_FINISHED)
+                    + pack_size(tg)
+                    + sizeof(uint64_t)
+                    + pack_size(rc)
+                    + sizeof(uint64_t)
+                    + pack_size(e::slice());
+    msg.reset(e::buffer::create(sz));
+    msg->pack_at(BUSYBEE_HEADER_SIZE)
+        << KVS_WR_FINISHED << tg << seqno << rc;
+    send(id, msg);
+
+    if (!st.ok())
+    {
+        LOG(ERROR) << "fatal LevelDB failure: " << st.ToString();
+    }
+}
+
+void
+daemon :: process_write_cancel(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
+{
+    transaction_group tg;
+    uint64_t seqno;
+    e::slice table;
+    e::slice key;
+    up = up >> tg >> seqno >> table >> key;
+    CHECK_UNPACK(KVS_WR_CANCEL, up);
+
+    //if (s_debug_mode)
+    //{
+        LOG(ERROR) << tg << " request write unlock(table=\"" << e::strescape(table.str())
+                  << "\", key=\"" << e::strescape(key.str()) << "\"); not implemented (yet)";
+    //}
+
+    const size_t sz = BUSYBEE_HEADER_SIZE
+                    + pack_size(KVS_WR_FINISHED)
+                    + pack_size(tg)
+                    + sizeof(uint64_t);
+    msg.reset(e::buffer::create(sz));
+    msg->pack_at(BUSYBEE_HEADER_SIZE) << KVS_WR_FINISHED << tg << seqno << CONSUS_SUCCESS;
+    send(id, msg);
+}
+#endif
+
+
+#if 0
+void
+daemon :: process_kvs_rd_locked(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
+{
+    transaction_group tg;
+    uint64_t seqno;
+    consus_returncode rc;
+    uint64_t timestamp;
+    e::slice value;
+    up = up >> tg >> seqno >> rc >> timestamp >> value;
+    CHECK_UNPACK(KVS_RD_LOCKED, up);
+
+    if (s_debug_mode)
+    {
+        LOG(INFO) << tg << "[" << seqno << "] kvs returned " << rc << " from " << id;
+    }
+
+    transaction_map_t::state_reference tsr;
+    transaction* xact = m_transactions.get_state(tg, &tsr);
+
+    if (xact)
+    {
+        xact->kvs_rd_locked(seqno, rc, timestamp, value, msg, this);
+    }
+}
+
+void
+daemon :: process_kvs_rd_unlocked(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
+{
+    transaction_group tg;
+    uint64_t seqno;
+    up = up >> tg >> seqno;
+    CHECK_UNPACK(KVS_RD_UNLOCKED, up);
+
+    if (s_debug_mode)
+    {
+        LOG(INFO) << tg << "[" << seqno << "] lock released from " << id;
+    }
+
+    transaction_map_t::state_reference tsr;
+    transaction* xact = m_transactions.get_state(tg, &tsr);
+
+    if (xact)
+    {
+        xact->kvs_rd_unlocked(seqno, this);
+    }
+}
+
+void
+daemon :: process_kvs_wr_begun(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
+{
+    transaction_group tg;
+    uint64_t seqno;
+    up = up >> tg >> seqno;
+    CHECK_UNPACK(KVS_WR_BEGUN, up);
+
+    if (s_debug_mode)
+    {
+        LOG(INFO) << tg << "[" << seqno << "] write started by " << id;
+    }
+
+    transaction_map_t::state_reference tsr;
+    transaction* xact = m_transactions.get_state(tg, &tsr);
+
+    if (xact)
+    {
+        xact->kvs_wr_begun(seqno, this);
+    }
+}
+
+void
+daemon :: process_kvs_wr_finished(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
+{
+    transaction_group tg;
+    uint64_t seqno;
+    up = up >> tg >> seqno;
+    CHECK_UNPACK(KVS_RD_UNLOCKED, up);
+
+    if (s_debug_mode)
+    {
+        LOG(INFO) << tg << "[" << seqno << "] write finished by " << id;
+    }
+
+    transaction_map_t::state_reference tsr;
+    transaction* xact = m_transactions.get_state(tg, &tsr);
+
+    if (xact)
+    {
+        xact->kvs_wr_finished(seqno, this);
+    }
+}
+#endif

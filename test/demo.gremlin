@@ -1,0 +1,3 @@
+#!/usr/bin/env gremlin
+include 1-node-1-dc-cluster.gremlin
+pause
