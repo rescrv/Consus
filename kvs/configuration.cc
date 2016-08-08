@@ -1,6 +1,10 @@
 // Copyright (c) 2015, Robert Escriva
 // All rights reserved.
 
+// e
+#include <e/endian.h>
+
+// consus
 #include "common/kvs_configuration.h"
 #include "kvs/configuration.h"
 
@@ -82,10 +86,18 @@ configuration :: daemons() const
 }
 
 bool
-configuration :: hash(data_center_id dc, unsigned index,
-                      comm_id replicas[CONSUS_MAX_REPLICATION_FACTOR],
-                      unsigned* num_replicas)
+configuration :: hash(data_center_id dc,
+                      const e::slice& /* table XXX */,
+                      const e::slice& key,
+                      replica_set* rs)
 {
+    // XXX use a better mapping scheme
+    char buf[sizeof(uint16_t)];
+    memset(buf, 0, sizeof(buf));
+    memmove(buf, key.data(), key.size() < 2 ? key.size() : 2);
+    uint16_t index;
+    e::unpack16be(buf, &index);
+
     ring* r = NULL;
 
     for (size_t i = 0; i < m_rings.size(); ++i)
@@ -102,52 +114,31 @@ configuration :: hash(data_center_id dc, unsigned index,
         return false;
     }
 
-    *num_replicas = 0;
-    replicas[0] = comm_id();
+    rs->desired_replication = 5;//XXX
+    rs->num_replicas = 0;
+    rs->replicas[0] = comm_id();
 
-    for (size_t i = 0; i < CONSUS_KVS_PARTITIONS && *num_replicas < CONSUS_MAX_REPLICATION_FACTOR; ++i)
+    for (size_t i = 0; i < CONSUS_KVS_PARTITIONS && rs->num_replicas < CONSUS_MAX_REPLICATION_FACTOR; ++i)
     {
         partition* p = &r->partitions[(index + i) % CONSUS_KVS_PARTITIONS];
 
-        if (p->owner != comm_id() && p->owner != replicas[0] &&
-            (*num_replicas == 0 || replicas[*num_replicas - 1] != p->owner))
+        // if the partition is assigned, we haven't wrapped around, and it's not
+        // the same as the previous partition
+        if (p->owner != comm_id() && p->owner != rs->replicas[0] &&
+            (rs->num_replicas == 0 || rs->replicas[rs->num_replicas - 1] != p->owner))
         {
-            replicas[*num_replicas] = p->owner;
-            ++*num_replicas;
+            rs->replicas[rs->num_replicas] = p->owner;
+            rs->transitioning[rs->num_replicas] = p->next_owner;
+            ++rs->num_replicas;
         }
+    }
+
+    if (rs->num_replicas > rs->desired_replication)
+    {
+        rs->num_replicas = rs->desired_replication;
     }
 
     return true;
-}
-
-void
-configuration :: map(data_center_id dc, unsigned index,
-                     comm_id* owner, comm_id* next_owner)
-{
-    if (index >= CONSUS_KVS_PARTITIONS)
-    {
-        *owner = comm_id();
-        *next_owner = comm_id();
-    }
-
-    ring* r = NULL;
-
-    for (size_t i = 0; i < m_rings.size(); ++i)
-    {
-        if (m_rings[i].dc == dc)
-        {
-            r = &m_rings[i];
-            break;
-        }
-    }
-
-    if (!r)
-    {
-        return;
-    }
-
-    *owner = r->partitions[index].owner;
-    *next_owner = r->partitions[index].next_owner;
 }
 
 std::vector<consus::comm_id>

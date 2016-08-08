@@ -27,13 +27,13 @@ struct read_replicator :: read_stub
     ~read_stub() throw () {}
 
     comm_id target;
-    comm_id owner;
+    replica_set rs;
     uint64_t last_request_time;
 };
 
 read_replicator :: read_stub :: read_stub(comm_id t)
     : target(t)
-    , owner()
+    , rs()
     , last_request_time(0)
 {
 }
@@ -89,7 +89,8 @@ read_replicator :: init(comm_id id, uint64_t nonce,
 
 void
 read_replicator :: response(comm_id id, consus_returncode rc,
-                            uint64_t timestamp, const e::slice& value, comm_id owner,
+                            uint64_t timestamp, const e::slice& value,
+                            const replica_set& rs,
                             std::auto_ptr<e::buffer> backing, daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
@@ -102,9 +103,9 @@ read_replicator :: response(comm_id id, consus_returncode rc,
 
     if (returncode_is_final(rc))
     {
-        stub->owner = owner;
+        stub->rs = rs;
 
-        if (timestamp > m_timestamp)
+        if (m_timestamp == 0 || timestamp > m_timestamp)
         {
             m_status = rc;
             m_value = value;
@@ -144,27 +145,28 @@ read_replicator :: get_stub(comm_id id)
 void
 read_replicator :: work_state_machine(daemon* d)
 {
-    comm_id replicas[CONSUS_MAX_REPLICATION_FACTOR];
-    unsigned num_replicas = 0;
-    unsigned desired_replication = 0;
-    d->choose_replicas(m_table, m_key, replicas,
-                       &num_replicas, &desired_replication);
+    configuration* c = d->get_config();
+    replica_set rs;
+
+    if (!c->hash(d->m_us.dc, m_table, m_key, &rs))
+    {
+        // XXX
+    }
+
     const uint64_t now = po6::monotonic_time();
     unsigned complete = 0;
 
-    for (unsigned i = 0; i < num_replicas; ++i)
+    for (unsigned i = 0; i < rs.num_replicas; ++i)
     {
-        // XXX the owner checking code here is not correct; only checks the one
-        // slice that the key maps to, not each and every partition
-        read_stub* stub = get_stub(replicas[i]);
+        read_stub* stub = get_stub(rs.replicas[i]);
 
         if (!stub)
         {
-            m_requests.push_back(read_stub(replicas[i]));
+            m_requests.push_back(read_stub(rs.replicas[i]));
             stub = &m_requests.back();
         }
 
-        if (stub->owner == replicas[0])
+        if (replica_sets_agree(rs.replicas[i], rs, stub->rs))
         {
             ++complete;
         }
@@ -174,16 +176,18 @@ read_replicator :: work_state_machine(daemon* d)
         }
     }
 
-    if (desired_replication > num_replicas)
+    if (rs.desired_replication > rs.num_replicas)
     {
         LOG_EVERY_N(WARNING, 1000) << "too few kvs daemons to achieve desired replication factor: "
-                                   << desired_replication - num_replicas << " more daemons needed";
-        desired_replication = num_replicas;
+                                   << rs.desired_replication - rs.num_replicas
+                                   << " more daemons needed";
+        rs.desired_replication = rs.num_replicas;
     }
 
-    const unsigned quorum = desired_replication / 2 + 1;
+    const unsigned quorum = rs.desired_replication / 2 + 1;
+    assert(quorum > 0);
 
-    if (quorum > 0 && complete >= quorum)
+    if (complete >= quorum)
     {
         m_finished = true;
         const size_t sz = BUSYBEE_HEADER_SIZE
@@ -201,10 +205,10 @@ read_replicator :: work_state_machine(daemon* d)
     }
 }
 
-// It's tempting to dedupe this with write-replicator.  Reads and writes may
-// have different sets of "terminal" returncodes in the future that represent
-// non-transient errors; keeping them as different functions reminds us to make
-// this decision in the future.
+// It's tempting to dedupe this with {write,lock}-replicator.  Reads and writes
+// may have different sets of "terminal" returncodes in the future that
+// represent non-transient errors; keeping them as different functions reminds
+// us to make this decision in the future.
 bool
 read_replicator :: returncode_is_final(consus_returncode rc)
 {

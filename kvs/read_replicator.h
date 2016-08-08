@@ -33,7 +33,8 @@ class read_replicator
                   const e::slice& table, const e::slice& key,
                   std::auto_ptr<e::buffer> backing);
         void response(comm_id id, consus_returncode rc,
-                      uint64_t timestamp, const e::slice& value, comm_id owner,
+                      uint64_t timestamp, const e::slice& value,
+                      const replica_set& rs,
                       std::auto_ptr<e::buffer> backing, daemon* d);
         void externally_work_state_machine(daemon* d);
 

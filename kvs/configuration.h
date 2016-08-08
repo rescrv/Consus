@@ -9,6 +9,7 @@
 #include "common/ids.h"
 #include "common/kvs_state.h"
 #include "common/ring.h"
+#include "kvs/replica_set.h"
 
 BEGIN_CONSUS_NAMESPACE
 
@@ -33,11 +34,10 @@ class configuration
 
     // hashing
     public:
-        bool hash(data_center_id dc, unsigned index,
-                  comm_id replicas[CONSUS_MAX_REPLICATION_FACTOR],
-                  unsigned* num_replicas);
-        void map(data_center_id dc, unsigned index,
-                 comm_id* owner, comm_id* next_owner);
+        bool hash(data_center_id dc,
+                  const e::slice& table,
+                  const e::slice& key,
+                  replica_set* rs);
 
     // XXX these APIs could be better designed or use better datastructures;
     // reevaluate them and their consistency with respect to other calls in this

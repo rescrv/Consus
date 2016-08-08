@@ -28,16 +28,14 @@ struct write_replicator :: write_stub
     comm_id target;
     uint64_t last_request_time;
     consus_returncode status;
-    comm_id owner1;
-    comm_id owner2;
+    replica_set rs;
 };
 
 write_replicator :: write_stub :: write_stub(comm_id t)
     : target(t)
     , last_request_time(0)
     , status(CONSUS_GARBAGE)
-    , owner1()
-    , owner2()
+    , rs()
 {
 }
 
@@ -97,8 +95,7 @@ write_replicator :: init(comm_id id, uint64_t nonce, unsigned flags,
 void
 write_replicator :: response(comm_id id,
                              consus_returncode rc,
-                             comm_id owner1,
-                             comm_id owner2,
+                             const replica_set& rs,
                              daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
@@ -112,8 +109,7 @@ write_replicator :: response(comm_id id,
     if (stub->status == CONSUS_GARBAGE)
     {
         stub->status = rc;
-        stub->owner1 = owner1;
-        stub->owner2 = owner2;
+        stub->rs = rs;
     }
 
     work_state_machine(d);
@@ -140,52 +136,63 @@ write_replicator :: get_stub(comm_id id)
     return NULL;
 }
 
+write_replicator::write_stub*
+write_replicator :: get_or_create_stub(comm_id id)
+{
+    write_stub* ws = get_stub(id);
+
+    if (!ws && id != comm_id())
+    {
+        m_requests.push_back(write_stub(id));
+        ws = &m_requests.back();
+    }
+
+    return ws;
+}
+
 void
 write_replicator :: work_state_machine(daemon* d)
 {
-    comm_id replicas[CONSUS_MAX_REPLICATION_FACTOR];
-    unsigned num_replicas = 0;
-    unsigned desired_replication = 0;
-    d->choose_replicas(m_table, m_key, replicas,
-                       &num_replicas, &desired_replication);
+    configuration* c = d->get_config();
+    replica_set rs;
+
+    if (!c->hash(d->m_us.dc, m_table, m_key, &rs))
+    {
+        // XXX
+    }
+
     const uint64_t now = po6::monotonic_time();
     unsigned complete_success = 0;
     unsigned complete_unknown = 0;
     unsigned complete_invalid = 0;
 
-    for (unsigned i = 0; i < num_replicas; ++i)
+    for (unsigned i = 0; i < rs.num_replicas; ++i)
     {
-        // XXX the owner checking code here is not correct; only checks the one
-        // slice that the key maps to, not each and every partition
-        write_stub* stub = get_stub(replicas[i]);
+        write_stub* owner1 = get_or_create_stub(rs.replicas[i]);
+        write_stub* owner2 = get_or_create_stub(rs.transitioning[i]);
+        // need to do it again in case anything was created
+        owner1 = get_stub(rs.replicas[i]);
+        owner2 = get_stub(rs.transitioning[i]);
+        assert(owner1);
 
-        if (!stub)
+        consus_returncode rc = owner1->status;
+
+        if (owner2)
         {
-            m_requests.push_back(write_stub(replicas[i]));
-            stub = &m_requests.back();
-        }
-
-        consus_returncode rc = stub->status;
-        write_stub* owner1 = NULL;
-        write_stub* owner2 = NULL;
-
-        if (stub->owner1 != comm_id() && stub->owner1 != stub->target)
-        {
-            owner1 = get_stub(stub->owner1);
-
-            if (!owner1 || owner1->status != rc)
+            if (owner2->status == CONSUS_GARBAGE)
             {
-                stub->status = rc = CONSUS_GARBAGE;
+                rc = CONSUS_GARBAGE;
             }
-        }
-
-        if (stub->owner2 != comm_id() && stub->owner2 != stub->target)
-        {
-            owner2 = get_stub(stub->owner2);
-
-            if (!owner2 || owner2->status != rc)
+            else if (owner1->status != owner2->status ||
+                     !replica_sets_agree(rs.replicas[i], owner1->rs, owner2->rs))
             {
-                stub->status = rc = CONSUS_GARBAGE;
+                rc = owner1->status = owner2->status = CONSUS_GARBAGE;
+            }
+            else
+            {
+                assert(owner1->status != CONSUS_GARBAGE);
+                assert(owner1->status == owner2->status);
+                assert(replica_sets_agree(rs.replicas[i], owner1->rs, owner2->rs));
             }
         }
 
@@ -201,16 +208,14 @@ write_replicator :: work_state_machine(daemon* d)
         {
             ++complete_invalid;
         }
-        else if (stub->last_request_time + d->resend_interval() < now)
+        else if (owner1->last_request_time + d->resend_interval() < now)
         {
-            send_write_request(stub, now, d);
-
-            if (owner1)
+            if (owner1 && !returncode_is_final(owner1->status))
             {
                 send_write_request(owner1, now, d);
             }
 
-            if (owner2)
+            if (owner2 && !returncode_is_final(owner2->status))
             {
                 send_write_request(owner2, now, d);
             }
@@ -219,17 +224,19 @@ write_replicator :: work_state_machine(daemon* d)
 
     bool short_write = false;
 
-    if (desired_replication > num_replicas)
+    if (rs.desired_replication > rs.num_replicas)
     {
         LOG_EVERY_N(WARNING, 1000) << "too few kvs daemons to achieve desired replication factor: "
-                                   << desired_replication - num_replicas << " more daemons needed";
-        desired_replication = num_replicas;
+                                   << rs.desired_replication - rs.num_replicas
+                                   << " more daemons needed";
+        rs.desired_replication = rs.num_replicas;
         short_write = true;
     }
 
     consus_returncode status = CONSUS_GARBAGE;
-    const unsigned quorum = desired_replication / 2 + 1;
+    const unsigned quorum = rs.desired_replication / 2 + 1;
     const unsigned sum = complete_success + complete_unknown + complete_invalid;
+    assert(quorum > 0);
 
     // we're very draconian here and require complete agreement among the live
     // quroum
@@ -237,19 +244,19 @@ write_replicator :: work_state_machine(daemon* d)
     //
     // also, this only writes a quorum, and {c,sh}ould be modified to write the
     // remaining nodes after returning to the client.
-    if (quorum > 0 && sum == complete_success && complete_success >= quorum)
+    if (sum > 0 && sum == complete_success && complete_success >= quorum)
     {
         status = !short_write ? CONSUS_SUCCESS : CONSUS_LESS_DURABLE;
     }
-    else if (quorum > 0 && sum == complete_unknown && complete_unknown >= quorum)
+    else if (sum > 0 && sum == complete_unknown && complete_unknown >= quorum)
     {
         status = CONSUS_UNKNOWN_TABLE;
     }
-    else if (quorum > 0 && sum == complete_invalid && complete_invalid >= quorum)
+    else if (sum > 0 && sum == complete_invalid && complete_invalid >= quorum)
     {
         status = CONSUS_INVALID;
     }
-    else if (quorum > 0 &&
+    else if (sum > 0 &&
              sum != complete_success &&
              sum != complete_unknown &&
              sum != complete_invalid)

@@ -34,14 +34,20 @@ class write_replicator
                   uint64_t timestamp, const e::slice& value,
                   std::auto_ptr<e::buffer> msg);
         void response(comm_id id, consus_returncode rc,
-                      comm_id owner1, comm_id owner2, daemon* d);
+                      const replica_set& rs, daemon* d);
         void externally_work_state_machine(daemon* d);
 
     private:
         struct write_stub;
 
     private:
+        // creating a stub may invalidate any pointers previously returned by
+        // get_*stub functions
+        //
+        // it is safe to call these with comm_id(), but they will always return
+        // NULL for the default comm_id()
         write_stub* get_stub(comm_id id);
+        write_stub* get_or_create_stub(comm_id id);
         void work_state_machine(daemon* d);
         bool returncode_is_final(consus_returncode rc);
         void send_write_request(write_stub* stub, uint64_t now, daemon* d);

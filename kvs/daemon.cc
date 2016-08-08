@@ -310,6 +310,7 @@ daemon :: daemon()
     , m_config(NULL)
     , m_threads()
     , m_data()
+    , m_repl_lk(&m_gc)
     , m_repl_rd(&m_gc)
     , m_repl_wr(&m_gc)
     , m_migrations(&m_gc)
@@ -727,17 +728,12 @@ daemon :: process_raw_rd(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
 
     // XXX check table exists
     // XXX check key meet spec
+    replica_set rs;
 
-    unsigned index = choose_index(table, key);
-
-    if (index == CONSUS_MAX_REPLICATION_FACTOR)
+    if (!c->hash(m_us.dc, table, key, &rs))
     {
         return;
     }
-
-    comm_id owner1;
-    comm_id owner2;
-    c->map(m_us.dc, index, &owner1, &owner2);
 
     e::slice value;
     datalayer::reference* ref = NULL;
@@ -750,10 +746,10 @@ daemon :: process_raw_rd(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
                     + pack_size(rc)
                     + sizeof(uint64_t)
                     + pack_size(value)
-                    + pack_size(owner1);
+                    + pack_size(rs);
     std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
     msg->pack_at(BUSYBEE_HEADER_SIZE)
-        << KVS_RAW_RD_RESP << nonce << rc << timestamp << value << owner1;
+        << KVS_RAW_RD_RESP << nonce << rc << timestamp << value << rs;
     send(id, msg);
 }
 
@@ -764,8 +760,8 @@ daemon :: process_raw_rd_resp(comm_id id, std::auto_ptr<e::buffer> msg, e::unpac
     consus_returncode rc;
     uint64_t timestamp;
     e::slice value;
-    comm_id owner;
-    up = up >> nonce >> rc >> timestamp >> value >> owner;
+    replica_set rs;
+    up = up >> nonce >> rc >> timestamp >> value >> rs;
     CHECK_UNPACK(KVS_RAW_RD_RESP, up);
     read_replicator_map_t::state_reference rsr;
     read_replicator* r = m_repl_rd.get_state(nonce, &rsr);
@@ -791,7 +787,7 @@ daemon :: process_raw_rd_resp(comm_id id, std::auto_ptr<e::buffer> msg, e::unpac
             }
         }
 
-        r->response(id, rc, timestamp, value, owner, msg, this);
+        r->response(id, rc, timestamp, value, rs, msg, this);
     }
     else
     {
@@ -834,17 +830,13 @@ daemon :: process_raw_wr(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
 
     // XXX check table exists
     // XXX check key/value meet spec
+    replica_set rs;
 
-    unsigned index = choose_index(table, key);
-
-    if (index == CONSUS_MAX_REPLICATION_FACTOR)
+    if (!c->hash(m_us.dc, table, key, &rs))
     {
         return;
     }
 
-    comm_id owner1;
-    comm_id owner2;
-    c->map(m_us.dc, index, &owner1, &owner2);
     consus_returncode rc = CONSUS_GARBAGE;
 
     if ((CONSUS_WRITE_TOMBSTONE & flags))
@@ -860,10 +852,9 @@ daemon :: process_raw_wr(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
                     + pack_size(KVS_RAW_WR_RESP)
                     + sizeof(uint64_t)
                     + pack_size(rc)
-                    + pack_size(owner1)
-                    + pack_size(owner2);
+                    + pack_size(rs);
     std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
-    msg->pack_at(BUSYBEE_HEADER_SIZE) << KVS_RAW_WR_RESP << nonce << rc << owner1 << owner2;
+    msg->pack_at(BUSYBEE_HEADER_SIZE) << KVS_RAW_WR_RESP << nonce << rc << rs;
     send(id, msg);
 }
 
@@ -872,9 +863,8 @@ daemon :: process_raw_wr_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpacker 
 {
     uint64_t nonce;
     consus_returncode rc;
-    comm_id owner1;
-    comm_id owner2;
-    up = up >> nonce >> rc >> owner1 >> owner2;
+    replica_set rs;
+    up = up >> nonce >> rc >> rs;
     CHECK_UNPACK(KVS_RAW_WR_RESP, up);
     write_replicator_map_t::state_reference wsr;
     write_replicator* w = m_repl_wr.get_state(nonce, &wsr);
@@ -882,7 +872,7 @@ daemon :: process_raw_wr_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpacker 
     if (w)
     {
         LOG_IF(INFO, s_debug_mode) << "raw write response nonce=" << nonce << " rc=" << rc << " from=" << id;
-        w->response(id, rc, owner1, owner2, this);
+        w->response(id, rc, rs, this);
     }
     else
     {
@@ -972,46 +962,6 @@ daemon :: generate_id()
     int ret = fd.xread(&x, sizeof(x));
     assert(ret == 8);
     return x;
-}
-
-unsigned
-daemon :: choose_index(const e::slice& /*XXX table*/, const e::slice& key)
-{
-    // XXX use a better scheme
-    char buf[sizeof(uint16_t)];
-    memset(buf, 0, sizeof(buf));
-    memmove(buf, key.data(), key.size() < 2 ? key.size() : 2);
-    uint16_t index;
-    e::unpack16be(buf, &index);
-    return index;
-}
-
-void
-daemon :: choose_replicas(const e::slice& table, const e::slice& key,
-                          comm_id replicas[CONSUS_MAX_REPLICATION_FACTOR],
-                          unsigned* num_replicas, unsigned* desired_replication)
-{
-    *desired_replication = 5U;//XXX
-    unsigned index = choose_index(table, key);
-
-    if (index == CONSUS_KVS_PARTITIONS)
-    {
-        *num_replicas = 0;
-        return;
-    }
-
-    configuration* c = get_config();
-    data_center_id dc = c->get_data_center(m_us.id);
-
-    if (!c->hash(dc, index, replicas, num_replicas))
-    {
-        *num_replicas = 0;
-    }
-
-    if (*num_replicas > *desired_replication)
-    {
-        *num_replicas = *desired_replication;
-    }
 }
 
 bool

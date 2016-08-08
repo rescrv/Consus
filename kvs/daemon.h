@@ -30,6 +30,7 @@
 #include "common/kvs.h"
 #include "kvs/configuration.h"
 #include "kvs/datalayer.h"
+#include "kvs/lock_replicator.h"
 #include "kvs/mapper.h"
 #include "kvs/migrator.h"
 #include "kvs/read_replicator.h"
@@ -58,6 +59,7 @@ class daemon
     private:
         struct coordinator_callback;
         class migration_bgthread;
+        typedef e::state_hash_table<uint64_t, lock_replicator> lock_replicator_map_t;
         typedef e::state_hash_table<uint64_t, read_replicator> read_replicator_map_t;
         typedef e::state_hash_table<uint64_t, write_replicator> write_replicator_map_t;
         typedef e::state_hash_table<partition_id, migrator> migrator_map_t;
@@ -91,10 +93,6 @@ class daemon
         void debug_dump();
         uint64_t generate_id();
         uint64_t resend_interval() { return PO6_SECONDS; }
-        unsigned choose_index(const e::slice& table, const e::slice& key);
-        void choose_replicas(const e::slice& table, const e::slice& key,
-                             comm_id replicas[CONSUS_MAX_REPLICATION_FACTOR],
-                             unsigned* num_replicas, unsigned* desired_replication);
         bool send(comm_id id, std::auto_ptr<e::buffer> msg);
 
     private:
@@ -107,6 +105,7 @@ class daemon
         configuration* m_config;
         std::vector<e::compat::shared_ptr<po6::threads::thread> > m_threads;
         std::auto_ptr<datalayer> m_data;
+        lock_replicator_map_t m_repl_lk;
         read_replicator_map_t m_repl_rd;
         write_replicator_map_t m_repl_wr;
         migrator_map_t m_migrations;
