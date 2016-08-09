@@ -43,7 +43,7 @@ kvs_lock_op :: finished()
 }
 
 void
-kvs_lock_op :: doit(lock_t type, lock_op op, const e::slice& table, const e::slice& key, const transaction_id& txid, daemon* d)
+kvs_lock_op :: doit(lock_op op, const e::slice& table, const e::slice& key, const transaction_id& txid, daemon* d)
 {
     const size_t sz = BUSYBEE_HEADER_SIZE
                     + pack_size(KVS_LOCK_OP)
@@ -51,11 +51,10 @@ kvs_lock_op :: doit(lock_t type, lock_op op, const e::slice& table, const e::sli
                     + pack_size(table)
                     + pack_size(key)
                     + pack_size(txid)
-                    + pack_size(type)
                     + pack_size(op);
     std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
     msg->pack_at(BUSYBEE_HEADER_SIZE)
-        << KVS_LOCK_OP << m_state_key << table << key << txid << type << op;
+        << KVS_LOCK_OP << m_state_key << table << key << txid << op;
     configuration* c = d->get_config();
     comm_id kvs = c->choose_kvs(d->m_us.dc);
     d->send(kvs, msg);

@@ -310,6 +310,7 @@ daemon :: daemon()
     , m_config(NULL)
     , m_threads()
     , m_data()
+    , m_locks(&m_gc)
     , m_repl_lk(&m_gc)
     , m_repl_rd(&m_gc)
     , m_repl_wr(&m_gc)
@@ -576,6 +577,12 @@ daemon :: loop(size_t thread)
                 break;
             case KVS_LOCK_OP:
                 process_lock_op(id, msg, up);
+                break;
+            case KVS_RAW_LK:
+                process_raw_lk(id, msg, up);
+                break;
+            case KVS_RAW_LK_RESP:
+                process_raw_lk_resp(id, msg, up);
                 break;
             case KVS_MIGRATE_SYN:
                 process_migrate_syn(id, msg, up);
@@ -887,16 +894,86 @@ daemon :: process_lock_op(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker 
     e::slice table;
     e::slice key;
     transaction_id txid;
-    lock_t type;
     lock_op op;
-    up = up >> nonce >> table >> key >> txid >> type >> op;
+    up = up >> nonce >> table >> key >> txid >> op;
     CHECK_UNPACK(KVS_LOCK_OP, up);
 
-    LOG(WARNING) << type << " " << op << "(\"" << e::strescape(table.str()) << "\", \""
-                 << e::strescape(key.str()) << "\") nonce=" << nonce
-                 << "; this is a NOP and not yet implemented";
-    msg->pack_at(BUSYBEE_HEADER_SIZE) << KVS_LOCK_OP_RESP << nonce << CONSUS_SUCCESS;
-    send(id, msg);
+    if (s_debug_mode)
+    {
+        LOG(INFO) << op << "(\"" << e::strescape(table.str()) << "\", \""
+                  << e::strescape(key.str()) << "\") nonce=" << nonce;
+    }
+
+    while (true)
+    {
+        uint64_t x = generate_id();
+        lock_replicator_map_t::state_reference lsr;
+        lock_replicator* lr = m_repl_lk.create_state(x, &lsr);
+
+        if (!lr)
+        {
+            continue;
+        }
+
+        lr->init(id, nonce, table, key, txid, op, msg);
+        lr->externally_work_state_machine(this);
+        break;
+    }
+}
+
+void
+daemon :: process_raw_lk(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
+{
+    uint64_t nonce;
+    e::slice table;
+    e::slice key;
+    transaction_id txid;
+    lock_op op;
+    up = up >> nonce >> table >> key >> txid >> op;
+    CHECK_UNPACK(KVS_RAW_LK, up);
+
+    if (s_debug_mode)
+    {
+        LOG(INFO) << "raw " << op
+                  << "(\"" << e::strescape(table.str()) << "\", \""
+                  << e::strescape(key.str()) << "\") nonce=" << nonce;
+    }
+
+    // XXX check table exists
+    // XXX check key/value meet spec
+
+    switch (op)
+    {
+        case LOCK_LOCK:
+            return m_locks.lock(id, nonce, table, key, txid, this);
+        case LOCK_UNLOCK:
+            return m_locks.unlock(id, nonce, table, key, txid, this);
+        default:
+            LOG(ERROR) << "received invalid lock op " << (unsigned)op;
+            return;
+    }
+}
+
+void
+daemon :: process_raw_lk_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
+{
+    uint64_t nonce;
+    transaction_id txid;
+    replica_set rs;
+    up = up >> nonce >> txid >> rs;
+    CHECK_UNPACK(KVS_RAW_LK_RESP, up);
+    lock_replicator_map_t::state_reference sr;
+    lock_replicator* lk = m_repl_lk.get_state(nonce, &sr);
+
+    if (lk)
+    {
+        LOG_IF(INFO, s_debug_mode) << "raw locking response nonce=" << nonce;
+        lk->response(id, txid, rs, this);
+    }
+    else
+    {
+        LOG_IF(INFO, s_debug_mode) << "dropping raw locking response nonce=" << nonce;
+    }
 }
 
 void

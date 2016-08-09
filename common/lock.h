@@ -15,13 +15,6 @@
 
 BEGIN_CONSUS_NAMESPACE
 
-enum lock_t
-{
-    LOCK_SHARE  = 1,
-    LOCK_ATOMIC = 2,
-    LOCK_EXCL   = 3
-};
-
 enum lock_op
 {
     LOCK_LOCK   = 1,
@@ -29,16 +22,7 @@ enum lock_op
 };
 
 std::ostream&
-operator << (std::ostream& lhs, lock_t rhs);
-std::ostream&
 operator << (std::ostream& lhs, lock_op rhs);
-
-e::packer
-operator << (e::packer lhs, const lock_t& rhs);
-e::unpacker
-operator >> (e::unpacker lhs, lock_t& rhs);
-size_t
-pack_size(const lock_t& rhs);
 
 e::packer
 operator << (e::packer lhs, const lock_op& rhs);

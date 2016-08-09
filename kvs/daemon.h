@@ -30,6 +30,7 @@
 #include "common/kvs.h"
 #include "kvs/configuration.h"
 #include "kvs/datalayer.h"
+#include "kvs/lock_manager.h"
 #include "kvs/lock_replicator.h"
 #include "kvs/mapper.h"
 #include "kvs/migrator.h"
@@ -64,6 +65,9 @@ class daemon
         typedef e::state_hash_table<uint64_t, write_replicator> write_replicator_map_t;
         typedef e::state_hash_table<partition_id, migrator> migrator_map_t;
         friend class mapper;
+        friend class lock_manager;
+        friend class lock_replicator;
+        friend class lock_state;
         friend class read_replicator;
         friend class write_replicator;
         friend class migrator;
@@ -84,6 +88,8 @@ class daemon
         void process_raw_wr_resp(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
 
         void process_lock_op(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_raw_lk(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_raw_lk_resp(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
 
         void process_migrate_syn(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_migrate_ack(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
@@ -105,6 +111,7 @@ class daemon
         configuration* m_config;
         std::vector<e::compat::shared_ptr<po6::threads::thread> > m_threads;
         std::auto_ptr<datalayer> m_data;
+        lock_manager m_locks;
         lock_replicator_map_t m_repl_lk;
         read_replicator_map_t m_repl_rd;
         write_replicator_map_t m_repl_wr;

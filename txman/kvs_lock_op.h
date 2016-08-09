@@ -36,7 +36,7 @@ class kvs_lock_op
         bool finished();
 
     public:
-        void doit(lock_t type, lock_op op,
+        void doit(lock_op op,
                   const e::slice& table, const e::slice& key,
                   const transaction_id& txid, daemon* d);
         void response(consus_returncode rc, daemon* d);

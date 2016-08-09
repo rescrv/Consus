@@ -43,10 +43,23 @@ class leveldb_datalayer : public datalayer
         virtual consus_returncode del(const e::slice& table,
                                       const e::slice& key,
                                       uint64_t timestamp);
+        virtual consus_returncode read_lock(const e::slice& table,
+                                            const e::slice& key,
+                                            transaction_id* txid);
+        virtual consus_returncode write_lock(const e::slice& table,
+                                             const e::slice& key,
+                                             const transaction_id& txid);
 
     private:
         struct comparator;
         struct reference;
+
+    private:
+        std::string data_key(const e::slice& table,
+                             const e::slice& key,
+                             uint64_t timestamp);
+        std::string lock_key(const e::slice& table,
+                             const e::slice& key);
 
     private:
         std::auto_ptr<comparator> m_cmp;

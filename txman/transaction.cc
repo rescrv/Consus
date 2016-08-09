@@ -77,7 +77,6 @@ struct transaction :: operation
 
     // locking
     bool require_lock;
-    lock_t lock_type;
     bool lock_acquired;
     bool lock_released;
     uint64_t lock_nonce;
@@ -124,7 +123,6 @@ transaction :: operation :: operation()
     , rc(CONSUS_GARBAGE)
     , backing()
     , require_lock(false)
-    , lock_type()
     , lock_acquired(false)
     , lock_released(false)
     , lock_nonce(0)
@@ -356,7 +354,6 @@ transaction :: read(comm_id id, uint64_t nonce, uint64_t seqno,
     po6::threads::mutex::hold hold(&m_mtx);
     internal_read("client", seqno, table, key, backing, d);
     m_ops[seqno].require_lock = true;
-    m_ops[seqno].lock_type = LOCK_SHARE;
     m_ops[seqno].require_read = true;
     m_ops[seqno].set_client(id, nonce);
     work_state_machine(d);
@@ -385,7 +382,6 @@ transaction :: paxos_2a_read(uint64_t seqno,
     po6::threads::mutex::hold hold(&m_mtx);
     internal_read("paxos 2a", seqno, table, key, backing, d);
     m_ops[seqno].require_lock = true;
-    m_ops[seqno].lock_type = LOCK_SHARE;
     m_ops[seqno].lock_acquired = true;
     m_ops[seqno].timestamp = timestamp;
     work_state_machine(d);
@@ -412,7 +408,6 @@ transaction :: commit_record_read(uint64_t seqno,
 
     internal_read("commit record", seqno, table, key, backing, d);
     m_ops[seqno].require_lock = true;
-    m_ops[seqno].lock_type = LOCK_SHARE;
     m_ops[seqno].timestamp = timestamp;
     m_ops[seqno].require_verify_read = true;
 }
@@ -470,7 +465,6 @@ transaction :: write(comm_id id, uint64_t nonce, uint64_t seqno,
     po6::threads::mutex::hold hold(&m_mtx);
     internal_write("client", seqno, table, key, value, backing, d);
     m_ops[seqno].require_lock = true;
-    m_ops[seqno].lock_type = LOCK_EXCL;
     m_ops[seqno].require_write = true;
     m_ops[seqno].set_client(id, nonce);
     work_state_machine(d);
@@ -499,7 +493,6 @@ transaction :: paxos_2a_write(uint64_t seqno,
     po6::threads::mutex::hold hold(&m_mtx);
     internal_write("paxos 2a", seqno, table, key, value, backing, d);
     m_ops[seqno].require_lock = true;
-    m_ops[seqno].lock_type = LOCK_EXCL;
     m_ops[seqno].lock_acquired = true;
     m_ops[seqno].require_write = true;
     work_state_machine(d);
@@ -526,7 +519,6 @@ transaction :: commit_record_write(uint64_t seqno,
 
     internal_write("commit record", seqno, table, key, value, backing, d);
     m_ops[seqno].require_lock = true;
-    m_ops[seqno].lock_type = LOCK_EXCL;
     m_ops[seqno].require_verify_write = true;
     m_ops[seqno].require_write = true;
 }
@@ -877,7 +869,7 @@ transaction :: callback_locked(consus_returncode rc, uint64_t seqno, daemon* d)
         return;
     }
 
-    assert(rc == CONSUS_SUCCESS);// XXX unsafe
+    assert(rc == CONSUS_SUCCESS || rc == CONSUS_LESS_DURABLE);// XXX unsafe
 
     if (m_ops[seqno].require_lock && !m_ops[seqno].lock_acquired)
     {
@@ -897,7 +889,7 @@ transaction :: callback_unlocked(consus_returncode rc, uint64_t seqno, daemon* d
         return;
     }
 
-    assert(rc == CONSUS_SUCCESS);// XXX unsafe
+    assert(rc == CONSUS_SUCCESS || rc == CONSUS_LESS_DURABLE);// XXX unsafe
 
     if (m_ops[seqno].require_lock && !m_ops[seqno].lock_released)
     {
@@ -1484,7 +1476,7 @@ transaction :: acquire_lock(uint64_t seqno, daemon* d)
         daemon::lock_op_map_t::state_reference sr;
         kvs_lock_op* kv = d->create_lock_op(&sr);
         kv->callback_transaction(m_tg, seqno, &transaction::callback_locked);
-        kv->doit(op.lock_type, LOCK_LOCK, op.table, op.key, m_tg.txid, d);
+        kv->doit(LOCK_LOCK, op.table, op.key, m_tg.txid, d);
         op.lock_nonce = kv->state_key();
     }
 }
@@ -1500,7 +1492,7 @@ transaction :: release_lock(uint64_t seqno, daemon* d)
         daemon::lock_op_map_t::state_reference sr;
         kvs_lock_op* kv = d->create_lock_op(&sr);
         kv->callback_transaction(m_tg, seqno, &transaction::callback_unlocked);
-        kv->doit(op.lock_type, LOCK_UNLOCK, op.table, op.key, m_tg.txid, d);
+        kv->doit(LOCK_UNLOCK, op.table, op.key, m_tg.txid, d);
         op.lock_nonce = kv->state_key();
     }
 }

@@ -185,7 +185,6 @@ read_replicator :: work_state_machine(daemon* d)
     }
 
     const unsigned quorum = rs.desired_replication / 2 + 1;
-    assert(quorum > 0);
 
     if (complete >= quorum)
     {

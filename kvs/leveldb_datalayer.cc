@@ -7,6 +7,7 @@
 // e
 #include <e/endian.h>
 #include <e/serialization.h>
+#include <e/strescape.h>
 
 // consus
 #include "kvs/leveldb_datalayer.h"
@@ -130,7 +131,7 @@ leveldb_datalayer :: init(std::string data)
 
     if (!st.ok())
     {
-        LOG(ERROR) << "could not open LevelDB: " << st.ToString();
+        LOG(ERROR) << "could not open leveldb: " << st.ToString();
         return false;
     }
 
@@ -145,8 +146,7 @@ leveldb_datalayer :: get(const e::slice& table,
                          e::slice* value,
                          datalayer::reference** ref)
 {
-    std::string tmp;
-    e::packer(&tmp) << table << key << timestamp_le;
+    std::string tmp = data_key(table, key, timestamp_le);
     std::auto_ptr<leveldb::Iterator> it(m_db->NewIterator(leveldb::ReadOptions()));
     it->Seek(tmp);
     *timestamp = 0;
@@ -155,8 +155,8 @@ leveldb_datalayer :: get(const e::slice& table,
 
     if (!it->status().ok())
     {
-        LOG(ERROR) << "LevelDB error: " << it->status().ToString();
-        return CONSUS_INVALID;
+        LOG(ERROR) << "leveldb error: " << it->status().ToString();
+        return CONSUS_SERVER_ERROR;
     }
     else if (!it->Valid() || tmp.size() != it->key().size() ||
              memcmp(tmp.data(), it->key().data(), tmp.size() - 8) != 0)
@@ -185,8 +185,7 @@ leveldb_datalayer :: put(const e::slice& table,
                          const e::slice& value)
 {
     assert(!value.empty()); /* XXX */
-    std::string tmp;
-    e::packer(&tmp) << table << key << timestamp;
+    std::string tmp = data_key(table, key, timestamp);
     leveldb::WriteOptions opts;
     opts.sync = true;
     leveldb::Status st = m_db->Put(opts, tmp, leveldb::Slice(value.cdata(), value.size()));
@@ -210,8 +209,7 @@ leveldb_datalayer :: del(const e::slice& table,
                          const e::slice& key,
                          uint64_t timestamp)
 {
-    std::string tmp;
-    e::packer(&tmp) << table << key << timestamp;
+    std::string tmp = data_key(table, key, timestamp);
     leveldb::WriteOptions opts;
     opts.sync = true;
     leveldb::Status st = m_db->Put(opts, tmp, leveldb::Slice());
@@ -228,4 +226,86 @@ leveldb_datalayer :: del(const e::slice& table,
     }
 
     return rc;
+}
+
+consus_returncode
+leveldb_datalayer :: read_lock(const e::slice& table,
+                               const e::slice& key,
+                               transaction_id* txid)
+{
+    std::string tmp = lock_key(table, key);
+    std::string val;
+    leveldb::Status st = m_db->Get(leveldb::ReadOptions(), tmp, &val);
+
+    if (st.IsNotFound())
+    {
+        *txid = transaction_id();
+        return CONSUS_NOT_FOUND;
+    }
+    else if (!st.ok())
+    {
+        LOG(ERROR) << "leveldb error: " << st.ToString();
+        return CONSUS_SERVER_ERROR;
+    }
+
+    e::unpacker up(val);
+    up = up >> *txid;
+
+    if (up.error())
+    {
+        LOG(ERROR) << "corrupt lock (\""
+                   << e::strescape(table.str()) << "\", \""
+                   << e::strescape(key.str()) << "\")";
+        return CONSUS_INVALID;
+    }
+
+    return CONSUS_SUCCESS;
+}
+
+consus_returncode
+leveldb_datalayer :: write_lock(const e::slice& table,
+                                const e::slice& key,
+                                const transaction_id& txid)
+{
+    std::string tmp = lock_key(table, key);
+    std::string val;
+    e::packer(&val) << txid;
+    leveldb::WriteOptions opts;
+    opts.sync = true;
+    leveldb::Status st = m_db->Put(opts, tmp, val);
+
+    if (st.ok())
+    {
+        return CONSUS_SUCCESS;
+    }
+    else
+    {
+        LOG(ERROR) << "leveldb error: " << st.ToString();
+        return CONSUS_SERVER_ERROR;
+    }
+}
+
+std::string
+leveldb_datalayer :: data_key(const e::slice& table,
+                              const e::slice& key,
+                              uint64_t timestamp)
+{
+    std::string tmp;
+    e::packer(&tmp)
+        << table
+        << e::pack_array<uint8_t>(key.data(), key.size())
+        << timestamp;
+    return tmp;
+}
+
+std::string
+leveldb_datalayer :: lock_key(const e::slice& table,
+                              const e::slice& key)
+{
+    std::string tmp;
+    e::packer(&tmp)
+        << e::slice("consus.lock")
+        << table
+        << e::pack_array<uint8_t>(key.data(), key.size());
+    return tmp;
 }

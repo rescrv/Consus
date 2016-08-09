@@ -236,7 +236,6 @@ write_replicator :: work_state_machine(daemon* d)
     consus_returncode status = CONSUS_GARBAGE;
     const unsigned quorum = rs.desired_replication / 2 + 1;
     const unsigned sum = complete_success + complete_unknown + complete_invalid;
-    assert(quorum > 0);
 
     // we're very draconian here and require complete agreement among the live
     // quroum

@@ -676,7 +676,7 @@ daemon :: process_unsafe_lock_op(comm_id id, std::auto_ptr<e::buffer>, e::unpack
     lock_op_map_t::state_reference sr;
     kvs_lock_op* kv = create_lock_op(&sr);
     kv->callback_client(id, client_nonce);
-    kv->doit(LOCK_EXCL, op, table, key, transaction_id(), this);
+    kv->doit(op, table, key, transaction_id(), this);
 }
 
 consus::kvs_lock_op*
