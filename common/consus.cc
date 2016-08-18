@@ -14,6 +14,7 @@ consus :: operator << (std::ostream& lhs, const consus_returncode& rc)
         STRINGIFY(CONSUS_LESS_DURABLE);
         STRINGIFY(CONSUS_NOT_FOUND);
         STRINGIFY(CONSUS_ABORTED);
+        STRINGIFY(CONSUS_COMMITTED);
         STRINGIFY(CONSUS_UNKNOWN_TABLE);
         STRINGIFY(CONSUS_NONE_PENDING);
         STRINGIFY(CONSUS_INVALID);

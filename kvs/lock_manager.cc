@@ -25,19 +25,19 @@ lock_manager :: ~lock_manager() throw ()
 void
 lock_manager :: lock(comm_id id, uint64_t nonce,
                      const e::slice& table, const e::slice& key,
-                     const transaction_id& txid, daemon* d)
+                     const transaction_group& tg, daemon* d)
 {
     lock_map_t::state_reference sr;
     lock_state* s = m_locks.get_or_create_state(table_key_pair(table, key), &sr);
-    s->enqueue_lock(id, nonce, txid, d);
+    s->enqueue_lock(id, nonce, tg, d);
 }
 
 void
 lock_manager :: unlock(comm_id id, uint64_t nonce,
                        const e::slice& table, const e::slice& key,
-                       const transaction_id& txid, daemon* d)
+                       const transaction_group& tg, daemon* d)
 {
     lock_map_t::state_reference sr;
     lock_state* s = m_locks.get_or_create_state(table_key_pair(table, key), &sr);
-    s->unlock(id, nonce, txid, d);
+    s->unlock(id, nonce, tg, d);
 }

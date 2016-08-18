@@ -29,6 +29,7 @@ enum network_msgtype
     TXMAN_WRITE     = 7426,
     TXMAN_COMMIT    = 7427,
     TXMAN_ABORT     = 7428,
+    TXMAN_WOUND     = 7429,
 
     TXMAN_PAXOS_2A  = 7439,
     TXMAN_PAXOS_2B  = 7433,
@@ -62,6 +63,8 @@ enum network_msgtype
 
     KVS_RAW_LK      = 7756,
     KVS_RAW_LK_RESP = 7757,
+
+    KVS_WOUND_XACT  = 7758,
 
     KVS_MIGRATE_SYN = 7800,
     KVS_MIGRATE_ACK = 7801,

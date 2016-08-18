@@ -11,7 +11,7 @@
 #include <consus.h>
 #include "namespace.h"
 #include "common/lock.h"
-#include "common/transaction_id.h"
+#include "common/transaction_group.h"
 
 BEGIN_CONSUS_NAMESPACE
 
@@ -41,10 +41,10 @@ class datalayer
                                       uint64_t timestamp) = 0;
         virtual consus_returncode read_lock(const e::slice& table,
                                             const e::slice& key,
-                                            transaction_id* txid) = 0;
+                                            transaction_group* tg) = 0;
         virtual consus_returncode write_lock(const e::slice& table,
                                              const e::slice& key,
-                                             const transaction_id& txid) = 0;
+                                             const transaction_group& tg) = 0;
 };
 
 class datalayer::reference

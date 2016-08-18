@@ -74,7 +74,8 @@ consus :: operator << (std::ostream& lhs, const transaction_group& rhs)
 {
     return lhs << "transaction_group(executing="
                << rhs.group << ", originating="
-               << rhs.txid.group << ", number="
+               << rhs.txid.group << ", start="
+               << rhs.txid.start << ", number="
                << rhs.txid.number << ")";
 }
 

@@ -80,14 +80,14 @@ struct lock_replicator :: lock_stub
 
     comm_id target;
     uint64_t last_request_time;
-    transaction_id txid;
+    transaction_group tg;
     replica_set rs;
 };
 
 lock_replicator :: lock_stub :: lock_stub(comm_id t)
     : target(t)
     , last_request_time(0)
-    , txid()
+    , tg()
     , rs()
 {
 }
@@ -101,7 +101,7 @@ lock_replicator :: lock_replicator(uint64_t key)
     , m_nonce()
     , m_table()
     , m_key()
-    , m_txid()
+    , m_tg()
     , m_op()
     , m_backing()
     , m_requests()
@@ -128,7 +128,7 @@ lock_replicator :: finished()
 void
 lock_replicator :: init(comm_id id, uint64_t nonce,
                         const e::slice& table, const e::slice& key,
-                        const transaction_id& txid, lock_op op,
+                        const transaction_group& tg, lock_op op,
                         std::auto_ptr<e::buffer> backing)
 {
     po6::threads::mutex::hold hold(&m_mtx);
@@ -137,14 +137,14 @@ lock_replicator :: init(comm_id id, uint64_t nonce,
     m_nonce = nonce;
     m_table = table;
     m_key = key;
-    m_txid = txid;
+    m_tg = tg;
     m_op = op;
     m_backing = backing;
     m_init = true;
 }
 
 void
-lock_replicator :: response(comm_id id, const transaction_id& txid,
+lock_replicator :: response(comm_id id, const transaction_group& tg,
                             const replica_set& rs, daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
@@ -155,9 +155,36 @@ lock_replicator :: response(comm_id id, const transaction_id& txid,
         return;
     }
 
-    stub->txid = txid;
+    stub->tg = tg;
     stub->rs = rs;
     work_state_machine(d);
+}
+
+void
+lock_replicator :: abort(const transaction_group& tg, daemon* d)
+{
+    drop(tg);
+    const size_t sz = BUSYBEE_HEADER_SIZE
+                    + pack_size(TXMAN_WOUND)
+                    + pack_size(tg);
+    std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
+    msg->pack_at(BUSYBEE_HEADER_SIZE) << TXMAN_WOUND << tg;
+    LOG_IF(INFO, s_debug_mode) << "sending wound message for " << tg;
+    po6::threads::mutex::hold hold(&m_mtx);
+    d->send(m_id, msg);
+}
+
+void
+lock_replicator :: drop(const transaction_group& tg)
+{
+    po6::threads::mutex::hold hold(&m_mtx);
+
+    if (m_tg == tg)
+    {
+        m_finished = true;
+        m_requests.clear();
+        LOG_IF(INFO, s_debug_mode) << "dropping transaction " << m_tg;
+    }
 }
 
 void
@@ -219,20 +246,20 @@ lock_replicator :: work_state_machine(daemon* d)
         assert(owner1);
         bool agree = !owner2 || replica_sets_agree(rs.replicas[i], owner1->rs, owner2->rs);
 
-        if (owner1->txid == m_txid && (!owner2 || owner2->txid == m_txid) && agree)
+        if (owner1->tg == m_tg && (!owner2 || owner2->tg == m_tg) && agree)
         {
             ++complete;
             continue;
         }
 
         if (owner1->last_request_time + d->resend_interval() < now &&
-            (owner1->txid != m_txid || !agree))
+            (owner1->tg != m_tg || !agree))
         {
             send_lock_request(owner1, now, d);
         }
 
         if (owner2 && owner2->last_request_time + d->resend_interval() < now &&
-            (owner2->txid != m_txid || !agree))
+            (owner2->tg != m_tg || !agree))
         {
             send_lock_request(owner2, now, d);
         }
@@ -282,11 +309,11 @@ lock_replicator :: send_lock_request(lock_stub* stub, uint64_t now, daemon* d)
                     + sizeof(uint64_t)
                     + pack_size(m_table)
                     + pack_size(m_key)
-                    + pack_size(m_txid)
+                    + pack_size(m_tg)
                     + pack_size(m_op);
     std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
     msg->pack_at(BUSYBEE_HEADER_SIZE)
-        << KVS_RAW_LK << m_state_key << m_table << m_key << m_txid << m_op;
+        << KVS_RAW_LK << m_state_key << m_table << m_key << m_tg << m_op;
     d->send(stub->target, msg);
     stub->last_request_time = now;
 }

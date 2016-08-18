@@ -231,7 +231,7 @@ leveldb_datalayer :: del(const e::slice& table,
 consus_returncode
 leveldb_datalayer :: read_lock(const e::slice& table,
                                const e::slice& key,
-                               transaction_id* txid)
+                               transaction_group* tg)
 {
     std::string tmp = lock_key(table, key);
     std::string val;
@@ -239,7 +239,7 @@ leveldb_datalayer :: read_lock(const e::slice& table,
 
     if (st.IsNotFound())
     {
-        *txid = transaction_id();
+        *tg = transaction_group();
         return CONSUS_NOT_FOUND;
     }
     else if (!st.ok())
@@ -249,7 +249,7 @@ leveldb_datalayer :: read_lock(const e::slice& table,
     }
 
     e::unpacker up(val);
-    up = up >> *txid;
+    up = up >> *tg;
 
     if (up.error())
     {
@@ -265,11 +265,11 @@ leveldb_datalayer :: read_lock(const e::slice& table,
 consus_returncode
 leveldb_datalayer :: write_lock(const e::slice& table,
                                 const e::slice& key,
-                                const transaction_id& txid)
+                                const transaction_group& tg)
 {
     std::string tmp = lock_key(table, key);
     std::string val;
-    e::packer(&val) << txid;
+    e::packer(&val) << tg;
     leveldb::WriteOptions opts;
     opts.sync = true;
     leveldb::Status st = m_db->Put(opts, tmp, val);

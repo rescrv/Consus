@@ -17,7 +17,7 @@
 #include "namespace.h"
 #include "common/ids.h"
 #include "common/lock.h"
-#include "common/transaction_id.h"
+#include "common/transaction_group.h"
 #include "kvs/table_key_pair.h"
 
 BEGIN_CONSUS_NAMESPACE
@@ -35,10 +35,10 @@ class lock_state
 
     public:
         void enqueue_lock(comm_id id, uint64_t nonce,
-                          const transaction_id& txid,
+                          const transaction_group& tg,
                           daemon* d);
         void unlock(comm_id id, uint64_t nonce,
-                    const transaction_id& txid,
+                    const transaction_group& tg,
                     daemon* d);
 
     private:
@@ -46,15 +46,24 @@ class lock_state
 
     private:
         bool ensure_initialized(daemon* d);
+        void send_wound(comm_id id, uint64_t nonce, uint8_t flags,
+                        const transaction_group& tg,
+                        daemon* d);
+        void send_wound_drop(comm_id id, uint64_t nonce,
+                             const transaction_group& tg,
+                             daemon* d);
+        void send_wound_abort(comm_id id, uint64_t nonce,
+                              const transaction_group& tg,
+                              daemon* d);
         void send_response(comm_id id, uint64_t nonce,
-                           const transaction_id& txid,
+                           const transaction_group& tg,
                            daemon* d);
 
     private:
         const table_key_pair m_state_key;
         po6::threads::mutex m_mtx;
         bool m_init;
-        transaction_id m_holder;
+        transaction_group m_holder;
         std::list<request> m_reqs;
 
     private:

@@ -90,6 +90,7 @@ class daemon
         void process_lock_op(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_raw_lk(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_raw_lk_resp(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_wound_xact(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
 
         void process_migrate_syn(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_migrate_ack(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);

@@ -11,7 +11,7 @@
 #include "namespace.h"
 #include "common/ids.h"
 #include "common/lock.h"
-#include "common/transaction_id.h"
+#include "common/transaction_group.h"
 #include "kvs/lock_state.h"
 #include "kvs/table_key_pair.h"
 
@@ -27,10 +27,10 @@ class lock_manager
     public:
         void lock(comm_id id, uint64_t nonce,
                   const e::slice& table, const e::slice& key,
-                  const transaction_id& txid, daemon* d);
+                  const transaction_group& tg, daemon* d);
         void unlock(comm_id id, uint64_t nonce,
                     const e::slice& table, const e::slice& key,
-                    const transaction_id& txid, daemon* d);
+                    const transaction_group& tg, daemon* d);
 
     private:
         typedef e::state_hash_table<table_key_pair, lock_state> lock_map_t;

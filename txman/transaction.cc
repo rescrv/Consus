@@ -27,7 +27,27 @@
 #define INVARIANT_VIOLATION(X) \
     LOG(ERROR) << logid() << " invariant violation: " << (X) << " failed";
 
-#define RETURN_IF_EXECUTED(I, S, A) \
+#define CLIENT_RETURN_IF_EXECUTED(I, F, N, A) \
+    do { \
+    if (m_state == ABORTED || m_decision == ABORTED) \
+    { \
+        LOG_IF(INFO, s_debug_mode) << logid() << ".ops[" << (I) << "]: responding with \"aborted\""; \
+        send_aborted_response((F), (N), d); \
+        return; \
+    } \
+    else if (m_state == COMMITTED || m_decision == COMMITTED) \
+    { \
+        LOG_IF(INFO, s_debug_mode) << logid() << ".ops[" << (I) << "]: responding with \"committed\""; \
+        send_committed_response((F), (N), d); \
+        return; \
+    } \
+    else \
+    { \
+        INTERNAL_RETURN_IF_EXECUTED((I), "client", (A)); \
+    } \
+    } while (0)
+
+#define INTERNAL_RETURN_IF_EXECUTED(I, S, A) \
     do { \
     if (m_state > EXECUTING) \
     { \
@@ -199,6 +219,7 @@ transaction :: transaction(const transaction_group& tg)
     , m_dcs()
     , m_dcs_sz()
     , m_state(INITIALIZED)
+    , m_decision(INITIALIZED)
     , m_timestamp(0)
     , m_prefer_to_commit(true)
     , m_ops()
@@ -236,6 +257,7 @@ transaction :: begin(comm_id id, uint64_t nonce, uint64_t timestamp,
                      daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
+    CLIENT_RETURN_IF_EXECUTED(0, id, nonce, "begin");
     internal_begin("client", timestamp, group, dcs, d);
     m_ops[0].set_client(id, nonce);
     work_state_machine(d);
@@ -293,7 +315,7 @@ transaction :: internal_begin(const char* source, uint64_t timestamp,
                               daemon* d)
 {
     ensure_initialized();
-    RETURN_IF_EXECUTED(0, source, "begin");
+    INTERNAL_RETURN_IF_EXECUTED(0, source, "begin");
 
     if (s_debug_mode)
     {
@@ -352,6 +374,7 @@ transaction :: read(comm_id id, uint64_t nonce, uint64_t seqno,
 {
     e::compat::shared_ptr<e::buffer> backing(_backing.release());
     po6::threads::mutex::hold hold(&m_mtx);
+    CLIENT_RETURN_IF_EXECUTED(seqno, id, nonce, "read");
     internal_read("client", seqno, table, key, backing, d);
     m_ops[seqno].require_lock = true;
     m_ops[seqno].require_read = true;
@@ -420,18 +443,13 @@ transaction :: internal_read(const char* source, uint64_t seqno,
                              daemon* d)
 {
     ensure_initialized();
+    INTERNAL_RETURN_IF_EXECUTED(seqno, source, "read");
 
     if (s_debug_mode)
     {
         LOG(INFO) << logid() << "[" << seqno << "] = " << source << " initiated read(\""
                   << e::strescape(table.str()) << "\", \""
                   << e::strescape(key.str()) << "\")";
-    }
-
-    if (m_state > EXECUTING)
-    {
-        LOG_IF(INFO, s_debug_mode) << "NOP:  state > EXECUTING";
-        return;
     }
 
     operation op;
@@ -463,6 +481,7 @@ transaction :: write(comm_id id, uint64_t nonce, uint64_t seqno,
 {
     e::compat::shared_ptr<e::buffer> backing(_backing.release());
     po6::threads::mutex::hold hold(&m_mtx);
+    CLIENT_RETURN_IF_EXECUTED(seqno, id, nonce, "write");
     internal_write("client", seqno, table, key, value, backing, d);
     m_ops[seqno].require_lock = true;
     m_ops[seqno].require_write = true;
@@ -532,6 +551,7 @@ transaction :: internal_write(const char* source, uint64_t seqno,
                               daemon* d)
 {
     ensure_initialized();
+    INTERNAL_RETURN_IF_EXECUTED(seqno, source, "write");
 
     if (s_debug_mode)
     {
@@ -539,12 +559,6 @@ transaction :: internal_write(const char* source, uint64_t seqno,
                   << e::strescape(table.str()) << "\", \""
                   << e::strescape(key.str()) << "\", \""
                   << e::strescape(value.str()) << "\")";
-    }
-
-    if (m_state > EXECUTING)
-    {
-        LOG_IF(INFO, s_debug_mode) << "NOP:  state > EXECUTING";
-        return;
     }
 
     operation op;
@@ -572,6 +586,7 @@ void
 transaction :: prepare(comm_id id, uint64_t nonce, uint64_t seqno, daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
+    CLIENT_RETURN_IF_EXECUTED(seqno, id, nonce, "prepare");
     internal_end_of_transaction("client", "prepare", LOG_ENTRY_TX_PREPARE, seqno, d);
     m_ops[seqno].set_client(id, nonce);
     work_state_machine(d);
@@ -617,6 +632,7 @@ void
 transaction :: abort(comm_id id, uint64_t nonce, uint64_t seqno, daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
+    CLIENT_RETURN_IF_EXECUTED(seqno, id, nonce, "abort");
     internal_end_of_transaction("client", "abort", LOG_ENTRY_TX_ABORT, seqno, d);
     m_ops[seqno].set_client(id, nonce);
     work_state_machine(d);
@@ -645,7 +661,7 @@ void
 transaction :: internal_end_of_transaction(const char* source, const char* func, log_entry_t let, uint64_t seqno, daemon* d)
 {
     ensure_initialized();
-    RETURN_IF_EXECUTED(seqno, source, func);
+    INTERNAL_RETURN_IF_EXECUTED(seqno, source, func);
 
     if (s_debug_mode)
     {
@@ -998,70 +1014,6 @@ transaction :: callback_verify_write(consus_returncode rc, uint64_t timestamp, c
     }
 }
 
-#if 0
-void
-transaction :: kvs_rd_locked(uint64_t seqno,
-                             consus_returncode rc,
-                             uint64_t timestamp,
-                             const e::slice& value,
-                             std::auto_ptr<e::buffer> backing,
-                             daemon* d)
-{
-    po6::threads::mutex::hold hold(&m_mtx);
-
-    if (seqno >= m_ops.size())
-    {
-        return;
-    }
-
-    if (m_ops[seqno].require_read_lock)
-    {
-        m_ops[seqno].read_lock_acquired = true;
-        m_ops[seqno].rc = rc;
-        m_ops[seqno].timestamp = timestamp;
-        m_ops[seqno].value = value;
-        m_ops[seqno].read_backing = e::compat::shared_ptr<e::buffer>(backing.release());
-        m_ops[seqno].time_of_last_read_request = 0;
-
-        if (m_state == EXECUTING)
-        {
-            m_timestamp = std::max(m_timestamp, timestamp + 1); // XXX replay
-        }
-    }
-
-    work_state_machine(d);
-}
-
-void
-transaction :: kvs_wr_begun(uint64_t seqno, daemon* d)
-{
-    po6::threads::mutex::hold hold(&m_mtx);
-
-    if (seqno >= m_ops.size())
-    {
-        return;
-    }
-
-    m_ops[seqno].write_started = true;
-    m_ops[seqno].time_of_last_write_request = 0;
-    work_state_machine(d);
-}
-
-void
-transaction :: kvs_wr_finished(uint64_t seqno, daemon* d)
-{
-    po6::threads::mutex::hold hold(&m_mtx);
-
-    if (seqno >= m_ops.size())
-    {
-        return;
-    }
-
-    m_ops[seqno].write_finished = true;
-    work_state_machine(d);
-}
-#endif
-
 void
 transaction :: externally_work_state_machine(daemon* d)
 {
@@ -1177,6 +1129,18 @@ transaction :: work_state_machine_executing(daemon* d)
          m_ops.back().type == LOG_ENTRY_TX_ABORT))
     {
         LOG_IF(INFO, s_debug_mode) << logid() << " finished execuing all operations; transitioning to DATA CENTER VOTE state";
+        m_state = LOCAL_COMMIT_VOTE;
+        return work_state_machine(d);
+    }
+
+    daemon::local_voter_map_t::state_reference lvsr;
+    local_voter* lv = d->m_local_voters.get_or_create_state(m_tg, &lvsr);
+    assert(lv);
+    uint64_t outcome;
+
+    if (lv->outcome(&outcome))
+    {
+        LOG_IF(INFO, s_debug_mode) << logid() << " short-circuiting operations to abort (possible deadlock prevention)";
         m_state = LOCAL_COMMIT_VOTE;
         return work_state_machine(d);
     }
@@ -1342,6 +1306,7 @@ transaction :: work_state_machine_committed(daemon* d)
 {
     size_t non_nop = 0;
     size_t done = 0;
+    m_decision = COMMITTED;
 
     for (size_t i = 0; i < m_ops.size(); ++i)
     {
@@ -1364,6 +1329,11 @@ transaction :: work_state_machine_committed(daemon* d)
             continue;
         }
 
+        if (m_ops[i].client != comm_id())
+        {
+            send_committed_response(&m_ops[i], d);
+        }
+
         ++done;
     }
 
@@ -1381,6 +1351,7 @@ transaction :: work_state_machine_aborted(daemon* d)
 {
     size_t non_nop = 0;
     size_t done = 0;
+    m_decision = ABORTED;
 
     for (size_t i = 0; i < m_ops.size(); ++i)
     {
@@ -1395,6 +1366,11 @@ transaction :: work_state_machine_aborted(daemon* d)
         {
             release_lock(i, d);
             continue;
+        }
+
+        if (m_ops[i].client != comm_id())
+        {
+            send_aborted_response(&m_ops[i], d);
         }
 
         ++done;
@@ -1476,7 +1452,7 @@ transaction :: acquire_lock(uint64_t seqno, daemon* d)
         daemon::lock_op_map_t::state_reference sr;
         kvs_lock_op* kv = d->create_lock_op(&sr);
         kv->callback_transaction(m_tg, seqno, &transaction::callback_locked);
-        kv->doit(LOCK_LOCK, op.table, op.key, m_tg.txid, d);
+        kv->doit(LOCK_LOCK, op.table, op.key, m_tg, d);
         op.lock_nonce = kv->state_key();
     }
 }
@@ -1492,7 +1468,7 @@ transaction :: release_lock(uint64_t seqno, daemon* d)
         daemon::lock_op_map_t::state_reference sr;
         kvs_lock_op* kv = d->create_lock_op(&sr);
         kv->callback_transaction(m_tg, seqno, &transaction::callback_unlocked);
-        kv->doit(LOCK_UNLOCK, op.table, op.key, m_tg.txid, d);
+        kv->doit(LOCK_UNLOCK, op.table, op.key, m_tg, d);
         op.lock_nonce = kv->state_key();
     }
 }
@@ -1787,17 +1763,68 @@ transaction :: send_response(operation* op, daemon* d)
 }
 
 void
+transaction :: send_committed_response(operation* op, daemon* d)
+{
+    if (op->client == comm_id())
+    {
+        return;
+    }
+
+    send_committed_response(op->client, op->nonce, d);
+    op->client = comm_id();
+}
+
+void
+transaction :: send_committed_response(comm_id id, uint64_t nonce, daemon* d)
+{
+    const size_t sz = BUSYBEE_HEADER_SIZE
+                    + pack_size(CLIENT_RESPONSE)
+                    + sizeof(uint64_t)
+                    + pack_size(CONSUS_COMMITTED);
+    std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
+    msg->pack_at(BUSYBEE_HEADER_SIZE)
+        << CLIENT_RESPONSE << nonce << CONSUS_COMMITTED;
+    d->send(id, msg);
+}
+
+void
+transaction :: send_aborted_response(operation* op, daemon* d)
+{
+    if (op->client == comm_id())
+    {
+        return;
+    }
+
+    send_aborted_response(op->client, op->nonce, d);
+    op->client = comm_id();
+}
+
+void
+transaction :: send_aborted_response(comm_id id, uint64_t nonce, daemon* d)
+{
+    const size_t sz = BUSYBEE_HEADER_SIZE
+                    + pack_size(CLIENT_RESPONSE)
+                    + sizeof(uint64_t)
+                    + pack_size(CONSUS_ABORTED);
+    std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
+    msg->pack_at(BUSYBEE_HEADER_SIZE)
+        << CLIENT_RESPONSE << nonce << CONSUS_ABORTED;
+    d->send(id, msg);
+}
+
+void
 transaction :: send_tx_begin(operation* op, daemon* d)
 {
     std::vector<comm_id> ids(m_group.members, m_group.members + m_group.members_sz);
     const size_t sz = BUSYBEE_HEADER_SIZE
                     + pack_size(CLIENT_RESPONSE)
                     + sizeof(uint64_t)
+                    + pack_size(CONSUS_SUCCESS)
                     + pack_size(m_tg)
                     + ::pack_size(ids);
     std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
     msg->pack_at(BUSYBEE_HEADER_SIZE)
-        << CLIENT_RESPONSE << op->nonce << m_tg.txid << ids;
+        << CLIENT_RESPONSE << op->nonce << CONSUS_SUCCESS << m_tg.txid << ids;
     d->send(op->client, msg);
     op->client = comm_id();
 }

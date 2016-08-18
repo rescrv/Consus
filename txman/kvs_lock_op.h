@@ -38,7 +38,7 @@ class kvs_lock_op
     public:
         void doit(lock_op op,
                   const e::slice& table, const e::slice& key,
-                  const transaction_id& txid, daemon* d);
+                  const transaction_group& tg, daemon* d);
         void response(consus_returncode rc, daemon* d);
         void callback_client(comm_id client, uint64_t nonce);
         void callback_transaction(const transaction_group& tg, uint64_t seqno,

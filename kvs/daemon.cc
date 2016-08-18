@@ -584,6 +584,9 @@ daemon :: loop(size_t thread)
             case KVS_RAW_LK_RESP:
                 process_raw_lk_resp(id, msg, up);
                 break;
+            case KVS_WOUND_XACT:
+                process_wound_xact(id, msg, up);
+                break;
             case KVS_MIGRATE_SYN:
                 process_migrate_syn(id, msg, up);
                 break;
@@ -601,6 +604,7 @@ daemon :: loop(size_t thread)
             case TXMAN_WRITE:
             case TXMAN_COMMIT:
             case TXMAN_ABORT:
+            case TXMAN_WOUND:
             case TXMAN_PAXOS_2A:
             case TXMAN_PAXOS_2B:
             case LV_VOTE_1A:
@@ -893,9 +897,9 @@ daemon :: process_lock_op(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker 
     uint64_t nonce;
     e::slice table;
     e::slice key;
-    transaction_id txid;
+    transaction_group tg;
     lock_op op;
-    up = up >> nonce >> table >> key >> txid >> op;
+    up = up >> nonce >> table >> key >> tg >> op;
     CHECK_UNPACK(KVS_LOCK_OP, up);
 
     if (s_debug_mode)
@@ -915,7 +919,7 @@ daemon :: process_lock_op(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker 
             continue;
         }
 
-        lr->init(id, nonce, table, key, txid, op, msg);
+        lr->init(id, nonce, table, key, tg, op, msg);
         lr->externally_work_state_machine(this);
         break;
     }
@@ -927,9 +931,9 @@ daemon :: process_raw_lk(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
     uint64_t nonce;
     e::slice table;
     e::slice key;
-    transaction_id txid;
+    transaction_group tg;
     lock_op op;
-    up = up >> nonce >> table >> key >> txid >> op;
+    up = up >> nonce >> table >> key >> tg >> op;
     CHECK_UNPACK(KVS_RAW_LK, up);
 
     if (s_debug_mode)
@@ -945,9 +949,9 @@ daemon :: process_raw_lk(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
     switch (op)
     {
         case LOCK_LOCK:
-            return m_locks.lock(id, nonce, table, key, txid, this);
+            return m_locks.lock(id, nonce, table, key, tg, this);
         case LOCK_UNLOCK:
-            return m_locks.unlock(id, nonce, table, key, txid, this);
+            return m_locks.unlock(id, nonce, table, key, tg, this);
         default:
             LOG(ERROR) << "received invalid lock op " << (unsigned)op;
             return;
@@ -958,9 +962,9 @@ void
 daemon :: process_raw_lk_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
     uint64_t nonce;
-    transaction_id txid;
+    transaction_group tg;
     replica_set rs;
-    up = up >> nonce >> txid >> rs;
+    up = up >> nonce >> tg >> rs;
     CHECK_UNPACK(KVS_RAW_LK_RESP, up);
     lock_replicator_map_t::state_reference sr;
     lock_replicator* lk = m_repl_lk.get_state(nonce, &sr);
@@ -968,11 +972,41 @@ daemon :: process_raw_lk_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpacker 
     if (lk)
     {
         LOG_IF(INFO, s_debug_mode) << "raw locking response nonce=" << nonce;
-        lk->response(id, txid, rs, this);
+        lk->response(id, tg, rs, this);
     }
     else
     {
         LOG_IF(INFO, s_debug_mode) << "dropping raw locking response nonce=" << nonce;
+    }
+}
+
+void
+daemon :: process_wound_xact(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
+{
+    uint64_t nonce;
+    uint8_t flags;
+    transaction_group tg;
+    up = up >> nonce >> flags >> tg;
+    CHECK_UNPACK(KVS_WOUND_XACT, up);
+    lock_replicator_map_t::state_reference sr;
+    lock_replicator* lk = m_repl_lk.get_state(nonce, &sr);
+
+    if (lk)
+    {
+        LOG_IF(INFO, s_debug_mode) << "wounding transaction " << tg;
+
+        if ((flags & WOUND_XACT_ABORT))
+        {
+            lk->abort(tg, this);
+        }
+        else if ((flags & WOUND_XACT_DROP_REQ))
+        {
+            lk->drop(tg);
+        }
+    }
+    else
+    {
+        LOG_IF(INFO, s_debug_mode) << "dropping transaction wound for " << tg;
     }
 }
 

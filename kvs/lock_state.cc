@@ -18,15 +18,17 @@
 
 using consus::lock_state;
 
+extern bool s_debug_mode;
+
 struct lock_state::request
 {
-    request() : id(), nonce(), txid() {}
-    request(comm_id i, uint64_t n, const transaction_id& x)
-        : id(i), nonce(n), txid(x) {}
+    request() : id(), nonce(), tg() {}
+    request(comm_id i, uint64_t n, const transaction_group& x)
+        : id(i), nonce(n), tg(x) {}
     ~request() throw () {}
     comm_id id;
     uint64_t nonce;
-    transaction_id txid;
+    transaction_group tg;
 };
 
 lock_state :: lock_state(const table_key_pair& tk)
@@ -52,12 +54,12 @@ bool
 lock_state :: finished()
 {
     po6::threads::mutex::hold hold(&m_mtx);
-    return !m_init || (m_reqs.empty() && m_holder == transaction_id());
+    return !m_init || (m_reqs.empty() && m_holder == transaction_group());
 }
 
 void
 lock_state :: enqueue_lock(comm_id id, uint64_t nonce,
-                           const transaction_id& txid,
+                           const transaction_group& tg,
                            daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
@@ -67,13 +69,49 @@ lock_state :: enqueue_lock(comm_id id, uint64_t nonce,
         return;
     }
 
-    m_reqs.push_back(request(id, nonce, txid));
+    if (m_holder == tg)
+    {
+        send_response(id, nonce, tg, d);
+        return;
+    }
 
-    if (m_holder == transaction_id())
+    bool found = false;
+
+    for (std::list<request>::iterator it = m_reqs.begin();
+            it != m_reqs.end(); ++it)
+    {
+        if (it->tg == tg)
+        {
+            found = true;
+
+            if (it->nonce > nonce)
+            {
+                send_wound_drop(it->id, it->nonce, it->tg, d);
+                it->id = id;
+                it->nonce = nonce;
+            }
+            else
+            {
+                send_wound_drop(id, nonce, tg, d);
+            }
+        }
+
+        if (it->tg.txid.preempts(m_holder.txid))
+        {
+            send_wound_abort(id, nonce, m_holder, d);
+            LOG_IF(INFO, s_debug_mode) << it->tg << " initiates wound of " << m_holder;
+        }
+    }
+
+    if (!found)
+    {
+        m_reqs.push_back(request(id, nonce, tg));
+    }
+
+    if (m_holder == transaction_group())
     {
         consus_returncode rc = d->m_data->write_lock(m_state_key.table,
-                                                     m_state_key.key,
-                                                     txid);
+                                                     m_state_key.key, tg);
 
         if (rc != CONSUS_SUCCESS)
         {
@@ -85,13 +123,20 @@ lock_state :: enqueue_lock(comm_id id, uint64_t nonce,
             return;
         }
 
-        send_response(id, nonce, txid, d);
+        send_response(id, nonce, tg, d);
+        m_holder = tg;
+    }
+
+    if (tg.txid.preempts(m_holder.txid))
+    {
+        send_wound_abort(id, nonce, m_holder, d);
+        LOG_IF(INFO, s_debug_mode) << tg << " initiates wound of " << m_holder;
     }
 }
 
 void
 lock_state :: unlock(comm_id id, uint64_t nonce,
-                     const transaction_id& txid,
+                     const transaction_group& tg,
                      daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
@@ -101,10 +146,10 @@ lock_state :: unlock(comm_id id, uint64_t nonce,
         return;
     }
 
-    if (m_holder == txid)
+    if (m_holder == tg)
     {
         assert(!m_reqs.empty());
-        assert(m_reqs.front().txid == txid);
+        assert(m_reqs.front().tg == tg);
         request next;
 
         if (m_reqs.size() > 1)
@@ -117,7 +162,7 @@ lock_state :: unlock(comm_id id, uint64_t nonce,
 
         consus_returncode rc = d->m_data->write_lock(m_state_key.table,
                                                      m_state_key.key,
-                                                     next.txid);
+                                                     next.tg);
 
         if (rc != CONSUS_SUCCESS)
         {
@@ -130,23 +175,45 @@ lock_state :: unlock(comm_id id, uint64_t nonce,
         }
 
         m_reqs.pop_front();
-        m_holder = next.txid;
-        send_response(id, nonce, txid, d);
+        m_holder = next.tg;
 
-        if (next.txid != transaction_id())
+        if (next.tg != transaction_group())
         {
-            send_response(next.id, next.nonce, next.txid, d);
+            send_response(next.id, next.nonce, next.tg, d);
         }
     }
+    else
+    {
+        for (std::list<request>::iterator it = m_reqs.begin(); it != m_reqs.end(); )
+        {
+            if (it->tg == tg)
+            {
+                it = m_reqs.erase(it);
+                send_wound_abort(it->id, it->nonce, it->tg, d);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+    }
+
+    // see reasoning in lock_replicator.cc for why we unconditionally act as if
+    // we unlocked the lock
+    send_response(id, nonce, tg, d);
 }
 
 bool
 lock_state :: ensure_initialized(daemon* d)
 {
-    transaction_id txid;
+    if (m_init)
+    {
+        return true;
+    }
+
+    transaction_group tg;
     consus_returncode rc = d->m_data->read_lock(m_state_key.table,
-                                                m_state_key.key,
-                                                &txid);
+                                                m_state_key.key, &tg);
 
     if (rc != CONSUS_SUCCESS && rc != CONSUS_NOT_FOUND)
     {
@@ -158,10 +225,10 @@ lock_state :: ensure_initialized(daemon* d)
         return false;
     }
 
-    if (txid != transaction_id())
+    if (tg != transaction_group())
     {
-        m_reqs.push_back(request(comm_id(), 0, txid));
-        m_holder = txid;
+        m_reqs.push_back(request(comm_id(), 0, tg));
+        m_holder = tg;
     }
 
     m_init = true;
@@ -169,8 +236,46 @@ lock_state :: ensure_initialized(daemon* d)
 }
 
 void
+lock_state :: send_wound(comm_id id, uint64_t nonce, uint8_t flags,
+                         const transaction_group& tg,
+                         daemon* d)
+{
+    if (id == comm_id())
+    {
+        return;
+    }
+
+    LOG_IF(INFO, s_debug_mode) << "sending wound message for " << tg;
+    const size_t sz = BUSYBEE_HEADER_SIZE
+                    + pack_size(KVS_WOUND_XACT)
+                    + sizeof(uint64_t)
+                    + sizeof(uint8_t)
+                    + pack_size(tg);
+    std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
+    msg->pack_at(BUSYBEE_HEADER_SIZE)
+        << KVS_WOUND_XACT << nonce << flags << tg;
+    d->send(id, msg);
+}
+
+void
+lock_state :: send_wound_drop(comm_id id, uint64_t nonce,
+                              const transaction_group& tg,
+                              daemon* d)
+{
+    send_wound(id, nonce, WOUND_XACT_DROP_REQ, tg, d);
+}
+
+void
+lock_state :: send_wound_abort(comm_id id, uint64_t nonce,
+                               const transaction_group& tg,
+                               daemon* d)
+{
+    send_wound(id, nonce, WOUND_XACT_ABORT, tg, d);
+}
+
+void
 lock_state :: send_response(comm_id id, uint64_t nonce,
-                            const transaction_id& txid, daemon* d)
+                            const transaction_group& tg, daemon* d)
 {
     if (id == comm_id())
     {
@@ -188,10 +293,10 @@ lock_state :: send_response(comm_id id, uint64_t nonce,
     const size_t sz = BUSYBEE_HEADER_SIZE
                     + pack_size(KVS_RAW_LK_RESP)
                     + sizeof(uint64_t)
-                    + pack_size(txid)
+                    + pack_size(tg)
                     + pack_size(rs);
     std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
     msg->pack_at(BUSYBEE_HEADER_SIZE)
-        << KVS_RAW_LK_RESP << nonce << txid << rs;
+        << KVS_RAW_LK_RESP << nonce << tg << rs;
     d->send(id, msg);
 }

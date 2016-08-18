@@ -510,6 +510,9 @@ daemon :: loop(size_t thread)
             case TXMAN_ABORT:
                 process_abort(id, msg, up);
                 break;
+            case TXMAN_WOUND:
+                process_wound(id, msg, up);
+                break;
             case TXMAN_PAXOS_2A:
                 process_paxos_2a(id, msg, up);
                 break;
@@ -570,6 +573,7 @@ daemon :: loop(size_t thread)
             case KVS_LOCK_OP:
             case KVS_RAW_LK:
             case KVS_RAW_LK_RESP:
+            case KVS_WOUND_XACT:
             case KVS_MIGRATE_SYN:
             case KVS_MIGRATE_ACK:
             default:
@@ -676,7 +680,7 @@ daemon :: process_unsafe_lock_op(comm_id id, std::auto_ptr<e::buffer>, e::unpack
     lock_op_map_t::state_reference sr;
     kvs_lock_op* kv = create_lock_op(&sr);
     kv->callback_client(id, client_nonce);
-    kv->doit(op, table, key, transaction_id(), this);
+    kv->doit(op, table, key, transaction_group(), this);
 }
 
 consus::kvs_lock_op*
@@ -854,6 +858,35 @@ daemon :: process_abort(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
     transaction* xact = m_transactions.get_or_create_state(transaction_group(txid), &tsr);
     assert(xact);
     xact->abort(id, nonce, seqno, this);
+}
+
+void
+daemon :: process_wound(comm_id, std::auto_ptr<e::buffer> msg, e::unpacker up)
+{
+    transaction_group tg;
+    up = up >> tg;
+    CHECK_UNPACK(TXMAN_WOUND, up);
+    LOG_IF(INFO, s_debug_mode) << "wounding " << tg;
+
+    if (get_config()->is_member(tg.group, m_us.id))
+    {
+        local_voter_map_t::state_reference lvsr;
+        local_voter* lv = m_local_voters.get_or_create_state(tg, &lvsr);
+        assert(lv);
+        lv->set_preferred_vote(CONSUS_VOTE_ABORT);
+        lv->externally_work_state_machine(this);
+        transaction_map_t::state_reference tsr;
+        transaction* xact = m_transactions.get_state(tg, &tsr);
+
+        if (xact)
+        {
+            xact->externally_work_state_machine(this);
+        }
+    }
+    else
+    {
+        send(tg.group, msg);
+    }
 }
 
 void
@@ -1200,7 +1233,7 @@ daemon :: generate_txid()
     // XXX groups.size() == 0?
     size_t idx = x % groups.size();
     id = groups[idx];
-    return transaction_id(id, x);
+    return transaction_id(id, po6::wallclock_time(), x);
 }
 
 bool

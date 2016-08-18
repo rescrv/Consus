@@ -25,6 +25,7 @@ consus :: operator << (std::ostream& lhs, network_msgtype rhs)
         STRINGIFY(TXMAN_WRITE);
         STRINGIFY(TXMAN_COMMIT);
         STRINGIFY(TXMAN_ABORT);
+        STRINGIFY(TXMAN_WOUND);
         STRINGIFY(TXMAN_PAXOS_2A);
         STRINGIFY(TXMAN_PAXOS_2B);
         STRINGIFY(LV_VOTE_1A);
@@ -50,6 +51,7 @@ consus :: operator << (std::ostream& lhs, network_msgtype rhs)
         STRINGIFY(KVS_LOCK_OP_RESP);
         STRINGIFY(KVS_RAW_LK);
         STRINGIFY(KVS_RAW_LK_RESP);
+        STRINGIFY(KVS_WOUND_XACT);
         STRINGIFY(KVS_MIGRATE_SYN);
         STRINGIFY(KVS_MIGRATE_ACK);
         STRINGIFY(CONSUS_NOP);

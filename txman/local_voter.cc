@@ -417,7 +417,8 @@ local_voter :: work_state_machine(daemon* d)
         unsigned idx = (our_idx + i) % m_group.members_sz;
 
         // XXX this is not robust if the coordinator totally goes missing
-        if (d->get_config()->get_state(m_group.members[idx]) == txman_state::ONLINE)
+        if ((!m_has_preferred_vote || m_preferred_vote == CONSUS_VOTE_COMMIT) &&
+            d->get_config()->get_state(m_group.members[idx]) == txman_state::ONLINE)
         {
             break;
         }

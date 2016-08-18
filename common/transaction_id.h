@@ -23,15 +23,17 @@ class transaction_id
 {
     public:
         transaction_id();
-        transaction_id(paxos_group_id g, uint64_t number);
+        transaction_id(paxos_group_id g, uint64_t start, uint64_t number);
         transaction_id(const transaction_id& other);
         ~transaction_id() throw ();
 
     public:
         size_t hash() const;
+        bool preempts(const transaction_id& other) const;
 
     public:
         paxos_group_id group;
+        uint64_t start;
         uint64_t number;
 };
 

@@ -15,6 +15,9 @@
 
 BEGIN_CONSUS_NAMESPACE
 
+#define WOUND_XACT_ABORT 1
+#define WOUND_XACT_DROP_REQ 2
+
 enum lock_op
 {
     LOCK_LOCK   = 1,

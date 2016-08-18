@@ -5,6 +5,7 @@
 #include <busybee_constants.h>
 
 // consus
+#include "common/consus.h"
 #include "common/transaction_id.h"
 #include "client/client.h"
 #include "client/pending_begin_transaction.h"
@@ -57,9 +58,10 @@ pending_begin_transaction :: handle_busybee_op(client* cl,
                                                std::auto_ptr<e::buffer>,
                                                e::unpacker up)
 {
+    consus_returncode rc;
     transaction_id txid;
     std::vector<comm_id> ids;
-    up = up >> txid >> ids;
+    up = up >> rc >> txid >> ids;
 
     if (up.error())
     {

@@ -160,6 +160,10 @@ class transaction
         void send_paxos_2a(uint64_t i, daemon* d);
         void send_paxos_2b(uint64_t i, daemon* d);
         void send_response(operation* op, daemon* d);
+        void send_committed_response(operation* op, daemon* d);
+        void send_committed_response(comm_id id, uint64_t nonce, daemon* d);
+        void send_aborted_response(operation* op, daemon* d);
+        void send_aborted_response(comm_id id, uint64_t nonce, daemon* d);
         void send_tx_begin(operation* op, daemon* d);
         void send_tx_read(operation* op, daemon* d);
         void send_tx_write(operation* op, daemon* d);
@@ -177,6 +181,7 @@ class transaction
         uint64_t m_dcs_timestamps[CONSUS_MAX_REPLICATION_FACTOR];
         size_t m_dcs_sz;
         state_t m_state;
+        state_t m_decision;
         uint64_t m_timestamp;
         bool m_prefer_to_commit;
         std::vector<operation> m_ops;

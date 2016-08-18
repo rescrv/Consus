@@ -15,7 +15,7 @@
 #include "namespace.h"
 #include "common/ids.h"
 #include "common/lock.h"
-#include "common/transaction_id.h"
+#include "common/transaction_group.h"
 
 BEGIN_CONSUS_NAMESPACE
 class daemon;
@@ -33,10 +33,12 @@ class lock_replicator
     public:
         void init(comm_id id, uint64_t nonce,
                   const e::slice& table, const e::slice& key,
-                  const transaction_id& txid, lock_op op,
+                  const transaction_group& tg, lock_op op,
                   std::auto_ptr<e::buffer> backing);
-        void response(comm_id id, const transaction_id& txid,
+        void response(comm_id id, const transaction_group& tg,
                       const replica_set& rs, daemon* d);
+        void abort(const transaction_group& tg, daemon* d);
+        void drop(const transaction_group& tg);
         void externally_work_state_machine(daemon* d);
 
     private:
@@ -57,7 +59,7 @@ class lock_replicator
         uint64_t m_nonce;
         e::slice m_table;
         e::slice m_key;
-        transaction_id m_txid;
+        transaction_group m_tg;
         lock_op m_op;
         std::auto_ptr<e::buffer> m_backing;
         std::vector<lock_stub> m_requests;

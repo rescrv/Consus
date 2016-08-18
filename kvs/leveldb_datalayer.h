@@ -45,10 +45,10 @@ class leveldb_datalayer : public datalayer
                                       uint64_t timestamp);
         virtual consus_returncode read_lock(const e::slice& table,
                                             const e::slice& key,
-                                            transaction_id* txid);
+                                            transaction_group* tg);
         virtual consus_returncode write_lock(const e::slice& table,
                                              const e::slice& key,
-                                             const transaction_id& txid);
+                                             const transaction_group& tg);
 
     private:
         struct comparator;
