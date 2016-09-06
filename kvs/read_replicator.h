@@ -42,6 +42,7 @@ class read_replicator
         struct read_stub;
 
     private:
+        std::string logid();
         read_stub* get_stub(comm_id id);
         void work_state_machine(daemon* d);
         bool returncode_is_final(consus_returncode rc);

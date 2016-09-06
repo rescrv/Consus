@@ -90,6 +90,29 @@ write_replicator :: init(comm_id id, uint64_t nonce, unsigned flags,
     m_value = value;
     m_backing = msg;
     m_init = true;
+
+    if (s_debug_mode)
+    {
+        std::string tmp;
+        const char* v = NULL;
+
+        if ((CONSUS_WRITE_TOMBSTONE & flags))
+        {
+            v = "TOMBSTONE";
+        }
+        else
+        {
+            tmp = e::strescape(value.str());
+            tmp = "\"" + tmp + "\"";
+            v = tmp.c_str();
+        }
+
+        LOG(INFO) << logid() << " write(\""
+                  << e::strescape(table.str()) << "\", \""
+                  << e::strescape(key.str())
+                  << "\", " << v << ")@" << timestamp
+                  << " from nonce=" << m_nonce << " id=" << m_id;
+    }
 }
 
 void
@@ -103,6 +126,11 @@ write_replicator :: response(comm_id id,
 
     if (!stub)
     {
+        if (s_debug_mode)
+        {
+            LOG(INFO) << logid() << " dropped response; no outstanding request to " << id;
+        }
+
         return;
     }
 
@@ -110,6 +138,18 @@ write_replicator :: response(comm_id id,
     {
         stub->status = rc;
         stub->rs = rs;
+
+        if (s_debug_mode)
+        {
+            LOG(INFO) << logid() << " response rc=" << rc << " from=" << id;
+        }
+    }
+    else if (stub->status != rc)
+    {
+        if (s_debug_mode)
+        {
+            LOG(INFO) << logid() << " dropped duplicate, but conflicting, response; rc_old=" << stub->status << " rc_new=" << rc << " from=" << id;
+        }
     }
 
     work_state_machine(d);
@@ -120,6 +160,12 @@ write_replicator :: externally_work_state_machine(daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
     work_state_machine(d);
+}
+
+std::string
+write_replicator :: logid()
+{
+    return daemon::logid(m_table, m_key) + "-W-REP";
 }
 
 write_replicator::write_stub*
@@ -275,8 +321,11 @@ write_replicator :: work_state_machine(daemon* d)
         std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
         msg->pack_at(BUSYBEE_HEADER_SIZE) << KVS_REP_WR_RESP << m_nonce << status;
         d->send(m_id, msg);
-        LOG_IF(INFO, s_debug_mode) << "sending write response " << status
-                                   << " nonce=" << m_nonce << " to " << m_id;
+
+        if (s_debug_mode)
+        {
+            LOG(INFO) << logid() << " response=" << status;
+        }
     }
 }
 
@@ -292,6 +341,7 @@ write_replicator :: returncode_is_final(consus_returncode rc)
         case CONSUS_LESS_DURABLE:
         case CONSUS_NOT_FOUND:
         case CONSUS_ABORTED:
+        case CONSUS_COMMITTED:
         case CONSUS_NONE_PENDING:
         case CONSUS_TIMEOUT:
         case CONSUS_INTERRUPTED:
@@ -311,23 +361,7 @@ write_replicator :: send_write_request(write_stub* stub, uint64_t now, daemon* d
 {
     if (s_debug_mode)
     {
-        std::string tmp;
-        const char* v = NULL;
-
-        if ((CONSUS_WRITE_TOMBSTONE & m_flags))
-        {
-            v = "TOMBSTONE";
-        }
-        else
-        {
-            tmp = e::strescape(m_value.str());
-            v = tmp.c_str();
-        }
-
-        LOG(INFO) << "sending raw write(\"" << e::strescape(m_table.str()) << "\", \""
-                  << e::strescape(m_key.str()) << "\"@" << m_timestamp
-                  << ", \"" << v << "\") nonce=" << m_nonce << " to "
-                  << stub->target;
+        LOG(INFO) << logid() << " sending target=" << stub->target;
     }
 
     assert(!returncode_is_final(stub->status));

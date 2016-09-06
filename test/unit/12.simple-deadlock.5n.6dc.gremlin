@@ -1,0 +1,4 @@
+#!/usr/bin/env gremlin
+include ../5-node-6-dc-cluster.gremlin
+timeout 60
+run python ${CONSUS_SRCDIR}/test/unit/12.simple-deadlock.py

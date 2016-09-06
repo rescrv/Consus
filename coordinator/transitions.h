@@ -42,6 +42,7 @@ TRANSITION(kvs_online);
 TRANSITION(kvs_offline);
 TRANSITION(kvs_migrated);
 
+TRANSITION(is_stable);
 TRANSITION(tick);
 
 #ifdef __cplusplus

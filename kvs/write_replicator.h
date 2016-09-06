@@ -41,6 +41,7 @@ class write_replicator
         struct write_stub;
 
     private:
+        std::string logid();
         // creating a stub may invalidate any pointers previously returned by
         // get_*stub functions
         //

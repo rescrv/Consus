@@ -96,6 +96,9 @@ class daemon
         void process_migrate_ack(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
 
     private:
+        static std::string logid(const e::slice& table, const e::slice& key);
+
+    private:
         configuration* get_config();
         void debug_dump();
         uint64_t generate_id();

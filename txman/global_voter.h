@@ -63,7 +63,7 @@ class global_voter
         void send_global(const generalized_paxos::message_p2a& m, daemon* d);
         void send_global(const generalized_paxos::message_p2b& m, daemon* d);
         bool propose_global(const generalized_paxos::command& c, daemon* d);
-        uint64_t tally_votes(const generalized_paxos::cstruct& v);
+        uint64_t tally_votes(const char* prefix, const generalized_paxos::cstruct& v);
 
     private:
         const transaction_group m_tg;

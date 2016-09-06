@@ -866,7 +866,7 @@ daemon :: process_wound(comm_id, std::auto_ptr<e::buffer> msg, e::unpacker up)
     transaction_group tg;
     up = up >> tg;
     CHECK_UNPACK(TXMAN_WOUND, up);
-    LOG_IF(INFO, s_debug_mode) << "wounding " << tg;
+    LOG_IF(INFO, s_debug_mode) << transaction_group::log(tg) << " wounding " << tg;
 
     if (get_config()->is_member(tg.group, m_us.id))
     {

@@ -16,6 +16,7 @@ main(int argc, const char* argv[])
     long txman_groups = 0;
     long kvss = 0;
     long timeout = 10;
+    bool stable = false;
     consus::connect_opts conn;
     e::argparser ap;
     ap.autohelp();
@@ -32,6 +33,9 @@ main(int argc, const char* argv[])
     ap.arg().name('t', "timeout")
             .description("wait at most S seconds (default: 10)")
             .metavar("S").as_long(&timeout);
+    ap.arg().name('s', "stable")
+            .description("wait until the coordinator knows of no pending changes")
+            .set_true(&stable);
     ap.add("Connect to a cluster:", conn.parser());
 
     if (!ap.parse(argc, argv))
@@ -74,6 +78,7 @@ main(int argc, const char* argv[])
     reqs.txmans = txmans;
     reqs.txman_groups = txman_groups;
     reqs.kvss = kvss;
+    reqs.stable = stable;
 
     if (consus_admin_availability_check(cl, &reqs, timeout, &rc) < 0)
     {

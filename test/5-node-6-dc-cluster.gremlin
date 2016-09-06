@@ -141,4 +141,5 @@ daemon consus key-value-store --debug --foreground --data=kvs5.dc6 --connect-str
 run consus availability-check --key-value-stores 30 --timeout 30
 
 run replicant availability-check --servers 1 --timeout 30 --host 127.0.0.1 --port 1982
+run consus availability-check --stable
 run sleep 10 # XXX

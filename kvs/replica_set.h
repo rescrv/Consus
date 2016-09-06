@@ -37,6 +37,9 @@ replica_sets_agree(comm_id target,
                    const replica_set& a,
                    const replica_set& b);
 
+std::ostream&
+operator << (std::ostream& lhs, const replica_set& rhs);
+
 e::packer
 operator << (e::packer lhs, const replica_set& rhs);
 e::unpacker

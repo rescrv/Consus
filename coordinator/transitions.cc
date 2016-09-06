@@ -189,6 +189,13 @@ consus_coordinator_kvs_migrated(rsm_context* ctx, void* obj, const char* data, s
 }
 
 CONSUS_API void
+consus_coordinator_is_stable(rsm_context* ctx, void* obj, const char*, size_t)
+{
+    PROTECT_UNINITIALIZED;
+    c->is_stable(ctx);
+}
+
+CONSUS_API void
 consus_coordinator_tick(rsm_context* ctx, void* obj, const char*, size_t)
 {
     PROTECT_UNINITIALIZED;

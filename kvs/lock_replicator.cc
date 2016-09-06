@@ -141,6 +141,15 @@ lock_replicator :: init(comm_id id, uint64_t nonce,
     m_op = op;
     m_backing = backing;
     m_init = true;
+
+    if (s_debug_mode)
+    {
+        LOG(INFO) << logid()
+                  << " table=\"" << e::strescape(table.str())
+                  << "\" key=\"" << e::strescape(key.str())
+                  << "\" transaction=" << tg
+                  << " nonce=" << nonce << " id=" << id;
+    }
 }
 
 void
@@ -169,8 +178,8 @@ lock_replicator :: abort(const transaction_group& tg, daemon* d)
                     + pack_size(tg);
     std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
     msg->pack_at(BUSYBEE_HEADER_SIZE) << TXMAN_WOUND << tg;
-    LOG_IF(INFO, s_debug_mode) << "sending wound message for " << tg;
     po6::threads::mutex::hold hold(&m_mtx);
+    LOG_IF(INFO, s_debug_mode) << logid() << " sending wound message for " << transaction_group::log(tg);
     d->send(m_id, msg);
 }
 
@@ -183,7 +192,7 @@ lock_replicator :: drop(const transaction_group& tg)
     {
         m_finished = true;
         m_requests.clear();
-        LOG_IF(INFO, s_debug_mode) << "dropping transaction " << m_tg;
+        LOG_IF(INFO, s_debug_mode) << logid() << " dropping transaction";
     }
 }
 
@@ -192,6 +201,23 @@ lock_replicator :: externally_work_state_machine(daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
     work_state_machine(d);
+}
+
+std::string
+lock_replicator :: logid()
+{
+    std::string s = daemon::logid(m_table, m_key)
+                  + ":" + transaction_group::log(m_tg);
+
+    switch (m_op)
+    {
+        case LOCK_LOCK:
+            return s + "-LL-REP";
+        case LOCK_UNLOCK:
+            return s + "-LU-REP";
+        default:
+            return s + "-L?-REP";
+    }
 }
 
 lock_replicator::lock_stub*
@@ -289,9 +315,11 @@ lock_replicator :: work_state_machine(daemon* d)
         std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
         msg->pack_at(BUSYBEE_HEADER_SIZE) << KVS_LOCK_OP_RESP << m_nonce << rc;
         d->send(m_id, msg);
-        LOG_IF(INFO, s_debug_mode) << "sending lock response "
-                                   << rc << " nonce="
-                                   << m_nonce << " to " << m_id;
+
+        if (s_debug_mode)
+        {
+            LOG(INFO) << logid() << " response=" << rc;
+        }
     }
 }
 
@@ -300,8 +328,7 @@ lock_replicator :: send_lock_request(lock_stub* stub, uint64_t now, daemon* d)
 {
     if (s_debug_mode)
     {
-        LOG(INFO) << "sending " << m_op << "(\"" << e::strescape(m_table.str()) << "\", \""
-                  << e::strescape(m_key.str()) << "\") nonce=" << m_nonce << " to " << stub->target;
+        LOG(INFO) << logid() << " sending target=" << stub->target;
     }
 
     const size_t sz = BUSYBEE_HEADER_SIZE

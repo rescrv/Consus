@@ -23,6 +23,7 @@ struct consus_availability_requirements
     unsigned txmans;
     unsigned txman_groups;
     unsigned kvss;
+    int stable;
 };
 
 int consus_admin_availability_check(struct consus_client* client,

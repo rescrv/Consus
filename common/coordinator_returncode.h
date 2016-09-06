@@ -7,6 +7,9 @@
 // C++
 #include <iostream>
 
+// e
+#include <e/serialization.h>
+
 // consus
 #include "namespace.h"
 
@@ -27,6 +30,13 @@ enum coordinator_returncode
 
 std::ostream&
 operator << (std::ostream& lhs, coordinator_returncode rhs);
+
+e::packer
+operator << (e::packer lhs, const coordinator_returncode& rhs);
+e::unpacker
+operator >> (e::unpacker lhs, coordinator_returncode& rhs);
+size_t
+pack_size(const coordinator_returncode& rhs);
 
 END_CONSUS_NAMESPACE
 

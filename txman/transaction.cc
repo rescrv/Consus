@@ -338,14 +338,14 @@ transaction :: internal_begin(const char* source, uint64_t timestamp,
 
     if (m_init_timestamp == 0)
     {
-        LOG(INFO) << logid() << ".transaction_group: " << m_tg;
+        LOG_IF(INFO, s_debug_mode) << logid() << ".transaction_group: " << m_tg;
 
         for (size_t i = 0; i < dcs.size(); ++i)
         {
-            LOG(INFO) << logid() << ".dc[" << i << "]: " << dcs[i]; // XXX prettify
+            LOG_IF(INFO, s_debug_mode) << logid() << ".dc[" << i << "]: " << dcs[i]; // XXX prettify
         }
 
-        LOG(INFO) << logid() << ".group " << group; // XXX prettify
+        LOG_IF(INFO, s_debug_mode) << logid() << ".group " << group; // XXX prettify
         m_init_timestamp = timestamp;
         m_timestamp = std::max(m_timestamp, timestamp); // XXX replay
         m_group = group;

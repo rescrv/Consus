@@ -50,6 +50,12 @@ consus :: replica_sets_agree(comm_id target,
            a.transitioning[idx_a] == b.transitioning[idx_b];
 }
 
+std::ostream&
+consus :: operator << (std::ostream& lhs, const replica_set& rhs)
+{
+    return lhs << "replica_set(XXX)"; // XXX
+}
+
 e::packer
 consus :: operator << (e::packer lhs, const replica_set& rhs)
 {

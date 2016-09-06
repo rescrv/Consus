@@ -85,6 +85,13 @@ read_replicator :: init(comm_id id, uint64_t nonce,
     m_key = key;
     m_kbacking = backing;
     m_init = true;
+
+    if (s_debug_mode)
+    {
+        LOG(INFO) << logid() << " read(\""
+                  << e::strescape(table.str()) << "\", \""
+                  << e::strescape(key.str()) << "\")";
+    }
 }
 
 void
@@ -126,6 +133,12 @@ read_replicator :: externally_work_state_machine(daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
     work_state_machine(d);
+}
+
+std::string
+read_replicator :: logid()
+{
+    return daemon::logid(m_table, m_key) + "-R-REP";
 }
 
 read_replicator::read_stub*

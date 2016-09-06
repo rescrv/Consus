@@ -78,7 +78,7 @@ bool
 local_voter :: finished()
 {
     po6::threads::mutex::hold hold(&m_mtx);
-    return !m_initialized || m_outcome_in_dispositions;
+    return !m_initialized /* XXX || m_outcome_in_dispositions*/;
 }
 
 void

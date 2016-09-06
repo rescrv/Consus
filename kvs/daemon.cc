@@ -24,6 +24,7 @@
 
 // e
 #include <e/atomic.h>
+#include <e/base64.h>
 #include <e/daemon.h>
 #include <e/daemonize.h>
 #include <e/endian.h>
@@ -642,13 +643,6 @@ daemon :: process_rep_rd(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker u
     uint64_t timestamp;
     up = up >> nonce >> table >> key >> timestamp;
     CHECK_UNPACK(KVS_REP_RD, up);
-
-    if (s_debug_mode)
-    {
-        LOG(INFO) << "replicated read(\"" << e::strescape(table.str()) << "\", \""
-                  << e::strescape(key.str()) << "\")";
-    }
-
     // XXX check key meet spec
 
     while (true)
@@ -679,27 +673,6 @@ daemon :: process_rep_wr(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker u
     e::slice value;
     up = up >> nonce >> flags >> table >> key >> timestamp >> value;
     CHECK_UNPACK(KVS_REP_WR, up);
-
-    if (s_debug_mode)
-    {
-        std::string tmp;
-        const char* v = NULL;
-
-        if ((CONSUS_WRITE_TOMBSTONE & flags))
-        {
-            v = "TOMBSTONE";
-        }
-        else
-        {
-            tmp = e::strescape(value.str());
-            v = tmp.c_str();
-        }
-
-        LOG(INFO) << "replicated write(\"" << e::strescape(table.str()) << "\", \""
-                  << e::strescape(key.str()) << "\"@" << timestamp
-                  << ", \"" << v << "\")";
-    }
-
     // XXX check key/value meet spec
 
     while (true)
@@ -729,20 +702,17 @@ daemon :: process_raw_rd(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
     up = up >> nonce >> table >> key >> timestamp;
     CHECK_UNPACK(KVS_RAW_RD, up);
     configuration* c = get_config();
-
-    if (s_debug_mode)
-    {
-        LOG(INFO) << "raw read(\"" << e::strescape(table.str()) << "\", \""
-                  << e::strescape(key.str()) << "\")@<=" << timestamp
-                  << " nonce=" << nonce;
-    }
-
     // XXX check table exists
     // XXX check key meet spec
     replica_set rs;
 
     if (!c->hash(m_us.dc, table, key, &rs))
     {
+        if (s_debug_mode)
+        {
+            LOG(INFO) << logid(table, key) << "-R-RAW dropped because hashing failed";
+        }
+
         return;
     }
 
@@ -762,6 +732,13 @@ daemon :: process_raw_rd(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
     msg->pack_at(BUSYBEE_HEADER_SIZE)
         << KVS_RAW_RD_RESP << nonce << rc << timestamp << value << rs;
     send(id, msg);
+
+    if (s_debug_mode)
+    {
+        LOG(INFO) << logid(table, key) << "-R-RAW read; value=\""
+                  << e::strescape(value.str()) << "\"@" << timestamp
+                  << "\", nonce=" << nonce << " replicas=" << rs;
+    }
 }
 
 void
@@ -779,6 +756,7 @@ daemon :: process_raw_rd_resp(comm_id id, std::auto_ptr<e::buffer> msg, e::unpac
 
     if (r)
     {
+        // XXX move into read_response
         if (s_debug_mode)
         {
             if (rc == CONSUS_SUCCESS)
@@ -818,33 +796,17 @@ daemon :: process_raw_wr(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
     up = up >> nonce >> flags >> table >> key >> timestamp >> value;
     CHECK_UNPACK(KVS_RAW_WR, up);
     configuration* c = get_config();
-
-    if (s_debug_mode)
-    {
-        std::string tmp;
-        const char* v = NULL;
-
-        if ((CONSUS_WRITE_TOMBSTONE & flags))
-        {
-            v = "TOMBSTONE";
-        }
-        else
-        {
-            tmp = e::strescape(value.str());
-            v = tmp.c_str();
-        }
-
-        LOG(INFO) << "raw write(\"" << e::strescape(table.str()) << "\", \""
-                  << e::strescape(key.str()) << "\"@" << timestamp
-                  << ", \"" << v << "\") nonce=" << nonce;
-    }
-
     // XXX check table exists
     // XXX check key/value meet spec
     replica_set rs;
 
     if (!c->hash(m_us.dc, table, key, &rs))
     {
+        if (s_debug_mode)
+        {
+            LOG(INFO) << logid(table, key) << "-W-RAW dropped because hashing failed";
+        }
+
         return;
     }
 
@@ -867,6 +829,18 @@ daemon :: process_raw_wr(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
     std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
     msg->pack_at(BUSYBEE_HEADER_SIZE) << KVS_RAW_WR_RESP << nonce << rc << rs;
     send(id, msg);
+
+    if (s_debug_mode)
+    {
+        if ((CONSUS_WRITE_TOMBSTONE & flags))
+        {
+            LOG(INFO) << logid(table, key) << "-W-RAW deleted; nonce=" << nonce << " replicas=" << rs;
+        }
+        else
+        {
+            LOG(INFO) << logid(table, key) << "-W-RAW written; nonce=" << nonce << " replicas=" << rs;
+        }
+    }
 }
 
 void
@@ -882,12 +856,11 @@ daemon :: process_raw_wr_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpacker 
 
     if (w)
     {
-        LOG_IF(INFO, s_debug_mode) << "raw write response nonce=" << nonce << " rc=" << rc << " from=" << id;
         w->response(id, rc, rs, this);
     }
     else
     {
-        LOG_IF(INFO, s_debug_mode) << "dropped raw write response nonce=" << nonce << " rc=" << rc << " from=" << id;
+        LOG_IF(INFO, s_debug_mode) << "dropped raw write; nonce=" << nonce << " rc=" << rc << " from=" << id;
     }
 }
 
@@ -901,12 +874,8 @@ daemon :: process_lock_op(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker 
     lock_op op;
     up = up >> nonce >> table >> key >> tg >> op;
     CHECK_UNPACK(KVS_LOCK_OP, up);
-
-    if (s_debug_mode)
-    {
-        LOG(INFO) << op << "(\"" << e::strescape(table.str()) << "\", \""
-                  << e::strescape(key.str()) << "\") nonce=" << nonce;
-    }
+    // XXX check table exists
+    // XXX check key meets spec
 
     while (true)
     {
@@ -925,6 +894,20 @@ daemon :: process_lock_op(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker 
     }
 }
 
+static const char*
+lock_op_str(consus::lock_op op)
+{
+    switch (op)
+    {
+        case consus::LOCK_LOCK:
+            return "lock";
+        case consus::LOCK_UNLOCK:
+            return "unlock";
+        default:
+            return "?";
+    }
+}
+
 void
 daemon :: process_raw_lk(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
@@ -938,9 +921,11 @@ daemon :: process_raw_lk(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
 
     if (s_debug_mode)
     {
-        LOG(INFO) << "raw " << op
+        LOG(INFO) << logid(table, key) << ":" << transaction_group::log(tg)
+                  << " " << lock_op_str(op)
                   << "(\"" << e::strescape(table.str()) << "\", \""
-                  << e::strescape(key.str()) << "\") nonce=" << nonce;
+                  << e::strescape(key.str()) << "\") nonce=" << nonce
+                  << " id=" << id;
     }
 
     // XXX check table exists
@@ -1049,6 +1034,20 @@ daemon :: process_migrate_ack(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
     {
         m->ack(version, this);
     }
+}
+
+std::string
+daemon :: logid(const e::slice& table, const e::slice& key)
+{
+    e::compat::hash<std::string> h;
+    unsigned char buf[2 * sizeof(uint64_t)];
+    unsigned char* ptr = buf;
+    ptr = e::pack64be(h(table.str()), ptr);
+    ptr = e::pack64be(h(key.str()), ptr);
+    char b64[2 * sizeof(buf)];
+    size_t sz = e::b64_ntop(buf, ptr - buf, b64, sizeof(b64));
+    assert(sz <= sizeof(b64));
+    return std::string(b64, sz);
 }
 
 consus::configuration*

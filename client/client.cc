@@ -9,6 +9,8 @@
 
 // consus
 #include "common/client_configuration.h"
+#include "common/consus.h"
+#include "common/coordinator_returncode.h"
 #include "common/kvs_configuration.h"
 #include "common/macros.h"
 #include "common/paxos_group.h"
@@ -447,9 +449,38 @@ client :: availability_check(consus_availability_requirements* reqs,
             }
         }
 
-        if (txmans_avail >= reqs->txmans &&
-            txman_groups.size() >= reqs->txman_groups &&
-            kvss.size() >= reqs->kvss)
+        if (txmans_avail < reqs->txmans ||
+            txman_groups.size() < reqs->txman_groups ||
+            kvss.size() < reqs->kvss)
+        {
+            continue;
+        }
+
+        if (!reqs->stable)
+        {
+            *status = CONSUS_SUCCESS;
+            return 0;
+        }
+
+        rc = REPLICANT_GARBAGE;
+        data = NULL;
+        data_sz = 0;
+        id = replicant_client_call(m_coord, "consus", "is_stable",
+                                   NULL, 0, REPLICANT_CALL_IDEMPOTENT,
+                                   &rc, &data, &data_sz);
+
+        if (!replicant_finish(id, -1, &rc, status))
+        {
+            replicant_client_kill(m_coord, id);
+            return -1;
+        }
+
+        assert(data || data_sz == 0);
+        up = e::unpacker(data, data_sz);
+        coordinator_returncode ccr;
+        up = up >> ccr;
+
+        if (ccr == COORD_SUCCESS)
         {
             *status = CONSUS_SUCCESS;
             return 0;

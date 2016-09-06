@@ -45,7 +45,9 @@ class lock_state
         struct request;
 
     private:
+        std::string logid();
         bool ensure_initialized(daemon* d);
+        void ordered_enqueue(const request& r);
         void send_wound(comm_id id, uint64_t nonce, uint8_t flags,
                         const transaction_group& tg,
                         daemon* d);

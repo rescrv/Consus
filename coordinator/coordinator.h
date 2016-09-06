@@ -61,6 +61,7 @@ class coordinator
 
     // maintenance
     public:
+        void is_stable(rsm_context* ctx);
         void tick(rsm_context* ctx);
 
     // backup/restore

@@ -146,7 +146,7 @@ bool
 global_voter :: finished()
 {
     po6::threads::mutex::hold hold(&m_mtx);
-    return (!m_data_center_init && !m_global_init) || m_outcome_in_dispositions;
+    return (!m_data_center_init && !m_global_init)/* XXX || m_outcome_in_dispositions*/;
 }
 
 bool
@@ -815,7 +815,7 @@ global_voter :: work_state_machine(daemon* d)
         send_global(m2, d);
     }
 
-    if (send_m3 && tally_votes(m3.v) != 0)
+    if (send_m3 && tally_votes("phase2b", m3.v) != 0)
     {
         send_global(m3, d);
     }
@@ -824,7 +824,7 @@ global_voter :: work_state_machine(daemon* d)
     {
         generalized_paxos::cstruct votes = m_global_gp.learned();
         LOG_IF(INFO, s_debug_mode) << logid() << "learned votes " << pretty_print_inner(votes);
-        uint64_t outcome = tally_votes(votes);
+        uint64_t outcome = tally_votes("learned", votes);
 
         if (outcome != 0)
         {
@@ -946,7 +946,7 @@ global_voter :: propose_global(const generalized_paxos::command& c, daemon* d)
 }
 
 uint64_t
-global_voter :: tally_votes(const generalized_paxos::cstruct& votes)
+global_voter :: tally_votes(const char* prefix, const generalized_paxos::cstruct& votes)
 {
     unsigned voted = 0;
     unsigned aborted = 0;
@@ -964,12 +964,12 @@ global_voter :: tally_votes(const generalized_paxos::cstruct& votes)
 
         if (c.type >= 2 * CONSUS_MAX_REPLICATION_FACTOR)
         {
-            LOG(ERROR) << logid() << "invalid command: " << c;
+            LOG(ERROR) << logid() << prefix << " invalid command: " << c;
         }
         else if (c.type >= CONSUS_MAX_REPLICATION_FACTOR)
         {
             // XXX re-cast vote
-            LOG(ERROR) << logid() << "XXX RE-CAST VOTE";
+            LOG(ERROR) << logid() << prefix << " XXX RE-CAST VOTE";
         }
         else
         {
@@ -981,7 +981,7 @@ global_voter :: tally_votes(const generalized_paxos::cstruct& votes)
 
                 if (up.error())
                 {
-                    LOG(ERROR) << logid() << "corrupt vote: " << c;
+                    LOG(ERROR) << logid() << prefix << " corrupt vote: " << c;
                 }
                 else if (v == CONSUS_VOTE_COMMIT)
                 {
@@ -997,15 +997,15 @@ global_voter :: tally_votes(const generalized_paxos::cstruct& votes)
                 }
                 else
                 {
-                    LOG(ERROR) << logid() << "invalid vote: " << c;
+                    LOG(ERROR) << logid() << prefix << " invalid vote: " << c;
                 }
             }
         }
     }
 
-    LOG_IF(INFO, s_debug_mode && voted) << logid() << committed << "/" << voted << " vote commit";
-    LOG_IF(INFO, s_debug_mode && voted) << logid() << aborted << "/" << voted << " vote abort";
-    LOG_IF(INFO, s_debug_mode && voted) << logid() << (m_dcs_sz / 2 + 1) << " is a quorum of voters";
+    LOG_IF(INFO, s_debug_mode && voted) << logid() << prefix << " " << committed << "/" << voted << " vote commit";
+    LOG_IF(INFO, s_debug_mode && voted) << logid() << prefix << " " << aborted << "/" << voted << " vote abort";
+    LOG_IF(INFO, s_debug_mode && voted) << logid() << prefix << " " << (m_dcs_sz / 2 + 1) << " is a quorum of voters";
 
     if (committed >= m_dcs_sz / 2 + 1)
     {

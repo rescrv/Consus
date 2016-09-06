@@ -45,6 +45,7 @@ class lock_replicator
         struct lock_stub;
 
     private:
+        std::string logid();
         lock_stub* get_stub(comm_id id);
         lock_stub* get_or_create_stub(comm_id id);
         void work_state_machine(daemon* d);

@@ -490,6 +490,19 @@ coordinator :: kvs_migrated(rsm_context*, partition_id id)
 }
 
 void
+coordinator :: is_stable(rsm_context* ctx)
+{
+    if (m_txmans_changed || m_kvss_changed)
+    {
+        return generate_response(ctx, COORD_NO_CAN_DO);
+    }
+    else
+    {
+        return generate_response(ctx, COORD_SUCCESS);
+    }
+}
+
+void
 coordinator :: tick(rsm_context* ctx)
 {
     const unsigned TXMAN_TICK_LIMIT = 5;
