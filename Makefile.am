@@ -66,6 +66,7 @@ EXTRA_DIST += LICENSE
 
 noinst_HEADERS += namespace.h
 noinst_HEADERS += visibility.h
+noinst_HEADERS += common/background_thread.h
 noinst_HEADERS += common/client_configuration.h
 noinst_HEADERS += common/constants.h
 noinst_HEADERS += common/consus.h
@@ -77,11 +78,14 @@ noinst_HEADERS += common/ids.h
 noinst_HEADERS += common/kvs_configuration.h
 noinst_HEADERS += common/kvs.h
 noinst_HEADERS += common/kvs_state.h
+noinst_HEADERS += common/lock.h
 noinst_HEADERS += common/macros.h
 noinst_HEADERS += common/network_msgtype.h
+noinst_HEADERS += common/partition.h
 noinst_HEADERS += common/paxos_group.h
-noinst_HEADERS += common/transaction_id.h
+noinst_HEADERS += common/ring.h
 noinst_HEADERS += common/transaction_group.h
+noinst_HEADERS += common/transaction_id.h
 noinst_HEADERS += common/txman_configuration.h
 noinst_HEADERS += common/txman.h
 noinst_HEADERS += common/txman_state.h
@@ -98,6 +102,9 @@ noinst_HEADERS += txman/daemon.h
 noinst_HEADERS += txman/durable_log.h
 noinst_HEADERS += txman/generalized_paxos.h
 noinst_HEADERS += txman/global_voter.h
+noinst_HEADERS += txman/kvs_lock_op.h
+noinst_HEADERS += txman/kvs_read.h
+noinst_HEADERS += txman/kvs_write.h
 noinst_HEADERS += txman/local_voter.h
 noinst_HEADERS += txman/log_entry_t.h
 noinst_HEADERS += txman/mapper.h
@@ -156,7 +163,17 @@ dist_man_MANS += man/consus-key-value-store.1
 
 noinst_HEADERS += kvs/configuration.h
 noinst_HEADERS += kvs/daemon.h
+noinst_HEADERS += kvs/datalayer.h
+noinst_HEADERS += kvs/leveldb_datalayer.h
+noinst_HEADERS += kvs/lock_manager.h
+noinst_HEADERS += kvs/lock_replicator.h
+noinst_HEADERS += kvs/lock_state.h
 noinst_HEADERS += kvs/mapper.h
+noinst_HEADERS += kvs/migrator.h
+noinst_HEADERS += kvs/read_replicator.h
+noinst_HEADERS += kvs/replica_set.h
+noinst_HEADERS += kvs/table_key_pair.h
+noinst_HEADERS += kvs/write_replicator.h
 
 consus_key_value_store_SOURCES =
 consus_key_value_store_SOURCES += common/background_thread.cc
@@ -248,6 +265,7 @@ man/consus-coordinator.1: man/consus-coordinator.1.h2m | consus-coordinator${EXE
 
 include_HEADERS += include/consus.h
 include_HEADERS += include/consus-admin.h
+include_HEADERS += include/consus-unsafe.h
 
 lib_LTLIBRARIES += libconsus.la
 
@@ -262,6 +280,9 @@ noinst_HEADERS += client/pending_transaction_abort.h
 noinst_HEADERS += client/pending_transaction_commit.h
 noinst_HEADERS += client/pending_transaction_read.h
 noinst_HEADERS += client/pending_transaction_write.h
+noinst_HEADERS += client/pending_unsafe_lock_op.h
+noinst_HEADERS += client/pending_unsafe_read.h
+noinst_HEADERS += client/pending_unsafe_write.h
 noinst_HEADERS += client/server_selector.h
 noinst_HEADERS += client/transaction.h
 
@@ -345,6 +366,7 @@ bindings/python/consus.c: bindings/python/consus.pyx
 ################################################################################
 
 EXTRA_DIST += test/env.sh
+EXTRA_DIST += test/demo.gremlin
 EXTRA_DIST += consus.supp
 
 EXTRA_DIST += test/unit/00.client.py
@@ -353,6 +375,7 @@ EXTRA_DIST += test/unit/00.nop-commit.py
 EXTRA_DIST += test/unit/10.single-get.py
 EXTRA_DIST += test/unit/10.single-put.py
 EXTRA_DIST += test/unit/11.put-get-separate-commits.py
+EXTRA_DIST += test/unit/12.simple-deadlock.py
 
 gremlins =
 ### begin automatically generated gremlins
@@ -617,6 +640,7 @@ EXTRA_DIST += doc/latex.py
 ################################## Maintenance #################################
 ################################################################################
 
+EXTRA_DIST += maint/generate-gremlin-include
 EXTRA_DIST += maint/generate-unit-test-gremlins
 EXTRA_DIST += maint/valgrind-gremlins
 
