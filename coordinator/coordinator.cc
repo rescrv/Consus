@@ -1139,7 +1139,7 @@ struct assignment
     assignment() : p(), t() {}
     assignment(unsigned _p, comm_id _t) : p(_p), t(_t) {}
 
-    bool operator < (const assignment& rhs) { return p < rhs.p; }
+    bool operator < (const assignment& rhs) const { return p < rhs.p; }
 
     unsigned p;
     comm_id t;
@@ -1150,7 +1150,7 @@ struct reassignment
     reassignment() : p(), f(), t() {}
     reassignment(unsigned _p, comm_id _f, comm_id _t) : p(_p), f(_f), t(_t) {}
 
-    bool operator < (const reassignment& rhs) { return p < rhs.p; }
+    bool operator < (const reassignment& rhs) const { return p < rhs.p; }
 
     unsigned p;
     comm_id f;
