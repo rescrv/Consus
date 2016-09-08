@@ -40,6 +40,7 @@ class lock_replicator
         void abort(const transaction_group& tg, daemon* d);
         void drop(const transaction_group& tg);
         void externally_work_state_machine(daemon* d);
+        std::string debug_dump();
 
     private:
         struct lock_stub;

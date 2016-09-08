@@ -31,6 +31,7 @@ class lock_manager
         void unlock(comm_id id, uint64_t nonce,
                     const e::slice& table, const e::slice& key,
                     const transaction_group& tg, daemon* d);
+        std::string debug_dump();
 
     private:
         typedef e::state_hash_table<table_key_pair, lock_state> lock_map_t;

@@ -161,9 +161,15 @@ lock_replicator :: response(comm_id id, const transaction_group& tg,
 
     if (!stub)
     {
+        if (s_debug_mode)
+        {
+            LOG(INFO) << logid() << " dropped response; no outstanding request to " << id;
+        }
+
         return;
     }
 
+    LOG(INFO) << logid() << " response from=" << id;
     stub->tg = tg;
     stub->rs = rs;
     work_state_machine(d);
@@ -201,6 +207,12 @@ lock_replicator :: externally_work_state_machine(daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
     work_state_machine(d);
+}
+
+std::string
+lock_replicator :: debug_dump()
+{
+    return "XXX"; // XXX
 }
 
 std::string
@@ -318,7 +330,7 @@ lock_replicator :: work_state_machine(daemon* d)
 
         if (s_debug_mode)
         {
-            LOG(INFO) << logid() << " response=" << rc;
+            LOG(INFO) << logid() << " response=" << rc << " id=" << m_id;
         }
     }
 }

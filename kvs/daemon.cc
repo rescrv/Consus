@@ -133,7 +133,7 @@ daemon :: coordinator_callback :: ~coordinator_callback() throw ()
 {
 }
 
-static std::vector<std::string>
+std::vector<std::string>
 split_by_newlines(std::string s)
 {
     std::vector<std::string> v;
@@ -756,31 +756,11 @@ daemon :: process_raw_rd_resp(comm_id id, std::auto_ptr<e::buffer> msg, e::unpac
 
     if (r)
     {
-        // XXX move into read_response
-        if (s_debug_mode)
-        {
-            if (rc == CONSUS_SUCCESS)
-            {
-                LOG(INFO) << "raw read response nonce=" << nonce << " rc=" << rc
-                          << " timestamp=" << timestamp
-                          << " value=\"" << e::strescape(value.str()) << "\"" << " from=" << id;
-            }
-            else if (rc == CONSUS_NOT_FOUND)
-            {
-                LOG(INFO) << "raw read response nonce=" << nonce << " rc=" << rc
-                          << " timestamp=" << timestamp << " from=" << id;
-            }
-            else
-            {
-                LOG(INFO) << "raw read response nonce=" << nonce << " rc=" << rc << " from=" << id;
-            }
-        }
-
         r->response(id, rc, timestamp, value, rs, msg, this);
     }
     else
     {
-        LOG_IF(INFO, s_debug_mode) << "dropped raw read response nonce=" << nonce << " rc=" << rc << " from=" << id;
+        LOG_IF(INFO, s_debug_mode) << "dropped raw read; nonce=" << nonce << " rc=" << rc << " from=" << id;
     }
 }
 
@@ -894,20 +874,6 @@ daemon :: process_lock_op(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker 
     }
 }
 
-static const char*
-lock_op_str(consus::lock_op op)
-{
-    switch (op)
-    {
-        case consus::LOCK_LOCK:
-            return "lock";
-        case consus::LOCK_UNLOCK:
-            return "unlock";
-        default:
-            return "?";
-    }
-}
-
 void
 daemon :: process_raw_lk(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
@@ -918,16 +884,6 @@ daemon :: process_raw_lk(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
     lock_op op;
     up = up >> nonce >> table >> key >> tg >> op;
     CHECK_UNPACK(KVS_RAW_LK, up);
-
-    if (s_debug_mode)
-    {
-        LOG(INFO) << logid(table, key) << ":" << transaction_group::log(tg)
-                  << " " << lock_op_str(op)
-                  << "(\"" << e::strescape(table.str()) << "\", \""
-                  << e::strescape(key.str()) << "\") nonce=" << nonce
-                  << " id=" << id;
-    }
-
     // XXX check table exists
     // XXX check key/value meet spec
 
@@ -956,12 +912,11 @@ daemon :: process_raw_lk_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpacker 
 
     if (lk)
     {
-        LOG_IF(INFO, s_debug_mode) << "raw locking response nonce=" << nonce;
         lk->response(id, tg, rs, this);
     }
     else
     {
-        LOG_IF(INFO, s_debug_mode) << "dropping raw locking response nonce=" << nonce;
+        LOG_IF(INFO, s_debug_mode) << "dropped lock response; nonce=" << nonce << " from=" << id;
     }
 }
 
@@ -1059,7 +1014,84 @@ daemon :: get_config()
 void
 daemon :: debug_dump()
 {
-    LOG(ERROR) << "DEBUG DUMP"; // XXX
+    // Intentionally collect std::string from other components and then
+    // split/etc here so that we can add a consistent prefix and so that it'll
+    // show up in the log nicely indented.  Factoring it into a new function
+    // would break this for relatively little savings.
+    LOG(INFO) << "=============================== Begin Debug Dump ===============================";
+    LOG(INFO) << "this host: " << m_us;
+    LOG(INFO) << "configuration version: " << get_config()->version().get();
+    LOG(INFO) << "note that entries can appear multiple times in the following tables";
+    LOG(INFO) << "this is a natural consequence of not holding global locks during the dump";
+    LOG(INFO) << "------------------------------- Replicating Locks ------------------------------";
+
+    for (lock_replicator_map_t::iterator it(&m_repl_lk); it.valid(); ++it)
+    {
+        lock_replicator* lr = *it;
+        std::string debug = lr->debug_dump();
+        std::vector<std::string> lines = split_by_newlines(debug);
+
+        for (size_t i = 0; i < lines.size(); ++i)
+        {
+            LOG(INFO) << "request=" << lr->state_key() << " " << lines[i];
+        }
+    }
+
+    LOG(INFO) << "------------------------------- Replicating Reads ------------------------------";
+
+    for (read_replicator_map_t::iterator it(&m_repl_rd); it.valid(); ++it)
+    {
+        read_replicator* rr = *it;
+        std::string debug = rr->debug_dump();
+        std::vector<std::string> lines = split_by_newlines(debug);
+
+        for (size_t i = 0; i < lines.size(); ++i)
+        {
+            LOG(INFO) << "request=" << rr->state_key() << " " << lines[i];
+        }
+    }
+
+    LOG(INFO) << "------------------------------ Replicating Writes ------------------------------";
+
+    for (write_replicator_map_t::iterator it(&m_repl_wr); it.valid(); ++it)
+    {
+        write_replicator* wr = *it;
+        std::string debug = wr->debug_dump();
+        std::vector<std::string> lines = split_by_newlines(debug);
+
+        for (size_t i = 0; i < lines.size(); ++i)
+        {
+            LOG(INFO) << "request=" << wr->state_key() << " " << lines[i];
+        }
+    }
+
+    LOG(INFO) << "---------------------------------- Lock State ----------------------------------";
+
+    {
+        std::string debug = m_locks.debug_dump();
+        std::vector<std::string> lines = split_by_newlines(debug);
+
+        for (size_t i = 0; i < lines.size(); ++i)
+        {
+            LOG(INFO) << lines[i];
+        }
+    }
+
+    LOG(INFO) << "---------------------------------- Migrations ----------------------------------";
+
+    for (migrator_map_t::iterator it(&m_migrations); it.valid(); ++it)
+    {
+        migrator* m = *it;
+        std::string debug = m->debug_dump();
+        std::vector<std::string> lines = split_by_newlines(debug);
+
+        for (size_t i = 0; i < lines.size(); ++i)
+        {
+            LOG(INFO) << "partition=" << m->state_key().get() << " " << lines[i];
+        }
+    }
+
+    LOG(INFO) << "================================ End Debug Dump ================================";
 }
 
 uint64_t

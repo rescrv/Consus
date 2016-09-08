@@ -863,6 +863,7 @@ transaction :: callback_durable(uint64_t seqno, daemon* d)
 {
     {
         po6::threads::mutex::hold hold(&m_mtx);
+        LOG_IF(INFO, s_debug_mode) << logid() << ".ops[" << seqno << "]: durable on this host";
 
         if (seqno >= m_ops.size())
         {
@@ -882,17 +883,20 @@ transaction :: callback_locked(consus_returncode rc, uint64_t seqno, daemon* d)
 
     if (seqno >= m_ops.size())
     {
+        LOG_IF(INFO, s_debug_mode) << logid() << ".ops[" << seqno << "]: lock callback dropped";
         return;
     }
 
+    LOG_IF(INFO, s_debug_mode) << logid() << ".ops[" << seqno << "]: lock acquired";
     assert(rc == CONSUS_SUCCESS || rc == CONSUS_LESS_DURABLE);// XXX unsafe
 
     if (m_ops[seqno].require_lock && !m_ops[seqno].lock_acquired)
     {
         m_ops[seqno].lock_nonce = 0;
         m_ops[seqno].lock_acquired = true;
-        work_state_machine(d);
     }
+
+    work_state_machine(d);
 }
 
 void
@@ -902,17 +906,20 @@ transaction :: callback_unlocked(consus_returncode rc, uint64_t seqno, daemon* d
 
     if (seqno >= m_ops.size())
     {
+        LOG_IF(INFO, s_debug_mode) << logid() << ".ops[" << seqno << "]: lock callback dropped";
         return;
     }
 
+    LOG_IF(INFO, s_debug_mode) << logid() << ".ops[" << seqno << "]: lock released";
     assert(rc == CONSUS_SUCCESS || rc == CONSUS_LESS_DURABLE);// XXX unsafe
 
     if (m_ops[seqno].require_lock && !m_ops[seqno].lock_released)
     {
         m_ops[seqno].lock_nonce = 0;
         m_ops[seqno].lock_released = true;
-        work_state_machine(d);
     }
+
+    work_state_machine(d);
 }
 
 void
@@ -923,9 +930,11 @@ transaction :: callback_read(consus_returncode rc, uint64_t timestamp, const e::
 
     if (seqno >= m_ops.size())
     {
+        LOG_IF(INFO, s_debug_mode) << logid() << ".ops[" << seqno << "]: read callback dropped";
         return;
     }
 
+    LOG_IF(INFO, s_debug_mode) << logid() << ".ops[" << seqno << "]: read completed";
     assert(rc == CONSUS_SUCCESS || rc == CONSUS_NOT_FOUND);// XXX unsafe
 
     if (m_ops[seqno].require_read && !m_ops[seqno].read_done)
@@ -936,8 +945,9 @@ transaction :: callback_read(consus_returncode rc, uint64_t timestamp, const e::
         m_ops[seqno].timestamp = timestamp;
         m_ops[seqno].value = e::slice(m_ops[seqno].read_backing);
         m_ops[seqno].rc = rc;
-        work_state_machine(d);
     }
+
+    work_state_machine(d);
 }
 
 void
@@ -947,17 +957,20 @@ transaction :: callback_write(consus_returncode rc, uint64_t seqno, daemon* d)
 
     if (seqno >= m_ops.size())
     {
+        LOG_IF(INFO, s_debug_mode) << logid() << ".ops[" << seqno << "]: write callback dropped";
         return;
     }
 
+    LOG_IF(INFO, s_debug_mode) << logid() << ".ops[" << seqno << "]: write completed";
     assert(rc == CONSUS_SUCCESS || rc == CONSUS_LESS_DURABLE);// XXX unsafe
 
     if (m_ops[seqno].require_write && !m_ops[seqno].write_done)
     {
         m_ops[seqno].write_nonce = 0;
         m_ops[seqno].write_done = true;
-        work_state_machine(d);
     }
+
+    work_state_machine(d);
 }
 
 void
@@ -965,6 +978,7 @@ transaction :: callback_verify_read(consus_returncode rc, uint64_t timestamp, co
                                     uint64_t seqno, daemon*d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
+    LOG_IF(INFO, s_debug_mode) << logid() << ".ops[" << seqno << "]: verify_read completed";
 
     if (seqno >= m_ops.size())
     {
@@ -982,9 +996,9 @@ transaction :: callback_verify_read(consus_returncode rc, uint64_t timestamp, co
         {
             avoid_commit_if_possible(d);
         }
-
-        work_state_machine(d);
     }
+
+    work_state_machine(d);
 }
 
 void
@@ -992,6 +1006,7 @@ transaction :: callback_verify_write(consus_returncode rc, uint64_t timestamp, c
                                      uint64_t seqno, daemon*d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
+    LOG_IF(INFO, s_debug_mode) << logid() << ".ops[" << seqno << "]: verify_read completed";
 
     if (seqno >= m_ops.size())
     {
@@ -1009,9 +1024,9 @@ transaction :: callback_verify_write(consus_returncode rc, uint64_t timestamp, c
         {
             avoid_commit_if_possible(d);
         }
-
-        work_state_machine(d);
     }
+
+    work_state_machine(d);
 }
 
 void

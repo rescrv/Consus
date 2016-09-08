@@ -36,6 +36,7 @@ class write_replicator
         void response(comm_id id, consus_returncode rc,
                       const replica_set& rs, daemon* d);
         void externally_work_state_machine(daemon* d);
+        std::string debug_dump();
 
     private:
         struct write_stub;

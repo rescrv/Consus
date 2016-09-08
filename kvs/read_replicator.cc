@@ -105,6 +105,11 @@ read_replicator :: response(comm_id id, consus_returncode rc,
 
     if (!stub)
     {
+        if (s_debug_mode)
+        {
+            LOG(INFO) << logid() << " dropped response; no outstanding request to " << id;
+        }
+
         return;
     }
 
@@ -114,6 +119,27 @@ read_replicator :: response(comm_id id, consus_returncode rc,
 
         if (m_timestamp == 0 || timestamp > m_timestamp)
         {
+            if (s_debug_mode)
+            {
+                if (rc == CONSUS_SUCCESS)
+                {
+                    LOG(INFO) << logid() << " response rc=" << rc
+                              << " timestamp=" << timestamp
+                              << " value=\"" << e::strescape(value.str()) << "\""
+                              << " from=" << id;
+                }
+                else if (rc == CONSUS_NOT_FOUND)
+                {
+                    LOG(INFO) << logid() << " response rc=" << rc
+                              << " timestamp=" << timestamp
+                              << " from=" << id;
+                }
+                else
+                {
+                    LOG(INFO) << logid() << " response rc=" << rc << " from=" << id;
+                }
+            }
+
             m_status = rc;
             m_value = value;
             m_vbacking = backing;
@@ -121,7 +147,9 @@ read_replicator :: response(comm_id id, consus_returncode rc,
         }
         else if (timestamp == m_timestamp && s_debug_mode && value != m_value)
         {
-            LOG(WARNING) << "two different values with the same timestamp";
+            LOG(WARNING) << logid() << " two different values with the same timestamp: \""
+                         << e::strescape(value.str()) << "\"@" << timestamp << " != \""
+                         << e::strescape(m_value.str()) << "\"@" << m_timestamp;
         }
     }
 
@@ -133,6 +161,12 @@ read_replicator :: externally_work_state_machine(daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
     work_state_machine(d);
+}
+
+std::string
+read_replicator :: debug_dump()
+{
+    return "XXX"; // XXX
 }
 
 std::string
@@ -252,10 +286,7 @@ read_replicator :: send_read_request(read_stub* stub, uint64_t now, daemon* d)
 {
     if (s_debug_mode)
     {
-        LOG(INFO) << "sending raw read(\"" << e::strescape(m_table.str()) << "\", \""
-                  << e::strescape(m_key.str()) << "\"@" << m_timestamp
-                  << "\") nonce=" << m_nonce << " to "
-                  << stub->target;
+        LOG(INFO) << logid() << " sending target=" << stub->target;
     }
 
     const size_t sz = BUSYBEE_HEADER_SIZE

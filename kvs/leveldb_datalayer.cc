@@ -36,6 +36,24 @@ leveldb_datalayer :: comparator :: ~comparator() throw ()
 int
 leveldb_datalayer :: comparator :: Compare(const leveldb::Slice& a, const leveldb::Slice& b) const
 {
+    static const leveldb::Slice lock_table_prefix("\x0bconsus.lock", 12);
+
+    if (a.starts_with(lock_table_prefix) && b.starts_with(lock_table_prefix))
+    {
+        return a.compare(b);
+    }
+    else if (a.starts_with(lock_table_prefix))
+    {
+        return -1;
+    }
+    else if (b.starts_with(lock_table_prefix))
+    {
+        return 1;
+    }
+
+    assert(!a.starts_with(lock_table_prefix));
+    assert(!b.starts_with(lock_table_prefix));
+
     if (a.size() < 8 || b.size() < 8)
     {
         return -1;
@@ -55,11 +73,11 @@ leveldb_datalayer :: comparator :: Compare(const leveldb::Slice& a, const leveld
         return 1;
     }
     // cmp == 0; order by size now
-    if (sz < y.size())
+    if (x.size() < y.size())
     {
         return -1;
     }
-    if (sz > y.size())
+    if (x.size() > y.size())
     {
         return 1;
     }

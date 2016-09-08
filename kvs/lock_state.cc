@@ -63,16 +63,26 @@ lock_state :: enqueue_lock(comm_id id, uint64_t nonce,
                            daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
+    invariant_check();
 
     if (!ensure_initialized(d))
     {
         return;
     }
 
+    if (s_debug_mode)
+    {
+        LOG(INFO) << logid() << " lock(\""
+                  << e::strescape(m_state_key.table) << "\", \""
+                  << e::strescape(m_state_key.key) << "\") nonce=" << nonce
+                  << " id=" << id;
+    }
+
     if (m_holder == tg)
     {
         LOG_IF(INFO, s_debug_mode) << logid() << " lock already held; nonce=" << nonce << " id=" << id;
         send_response(id, nonce, tg, d);
+        invariant_check();
         return;
     }
 
@@ -127,6 +137,9 @@ lock_state :: enqueue_lock(comm_id id, uint64_t nonce,
                        << "\", \""
                        << e::strescape(m_state_key.key)
                        << "\") nonce=" << nonce;
+            assert(m_reqs.front().tg == tg);
+            m_reqs.pop_front();
+            invariant_check();
             return;
         }
 
@@ -142,6 +155,8 @@ lock_state :: enqueue_lock(comm_id id, uint64_t nonce,
                                    << " abort-wounds "
                                    << transaction_group::log(m_holder);
     }
+
+    invariant_check();
 }
 
 void
@@ -150,10 +165,19 @@ lock_state :: unlock(comm_id id, uint64_t nonce,
                      daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
+    invariant_check();
 
     if (!ensure_initialized(d))
     {
         return;
+    }
+
+    if (s_debug_mode)
+    {
+        LOG(INFO) << logid() << " unlock(\""
+                  << e::strescape(m_state_key.table) << "\", \""
+                  << e::strescape(m_state_key.key) << "\") nonce=" << nonce
+                  << " id=" << id;
     }
 
     if (m_holder == tg)
@@ -181,6 +205,7 @@ lock_state :: unlock(comm_id id, uint64_t nonce,
                        << "\", \""
                        << e::strescape(m_state_key.key)
                        << "\") nonce=" << nonce;
+            invariant_check();
             return;
         }
 
@@ -213,6 +238,26 @@ lock_state :: unlock(comm_id id, uint64_t nonce,
     // see reasoning in lock_replicator.cc for why we unconditionally act as if
     // we unlocked the lock
     send_response(id, nonce, tg, d);
+    invariant_check();
+}
+
+std::string
+lock_state :: debug_dump()
+{
+    po6::threads::mutex::hold hold(&m_mtx);
+    std::ostringstream ostr;
+    ostr << "lock holder=" << transaction_group::log(m_holder) << "\n";
+    size_t i = 0;
+
+    for (std::list<request>::iterator it = m_reqs.begin();
+            it != m_reqs.end(); ++it, ++i)
+    {
+        ostr << "lock queue[" << i << "]"
+             << " tx=" << transaction_group::log(it->tg)
+             << " id=" << it->id << " nonce=" << it->nonce << "\n";
+    }
+
+    return ostr.str();
 }
 
 std::string
@@ -221,9 +266,35 @@ lock_state :: logid()
     return daemon::logid(m_state_key.table, m_state_key.key) + "-LS";
 }
 
+void
+lock_state :: invariant_check()
+{
+    if (!m_init || m_reqs.empty())
+    {
+        assert(m_holder == transaction_group());
+        assert(m_reqs.empty());
+    }
+    else
+    {
+        assert(m_holder == m_reqs.front().tg);
+
+        for (std::list<request>::iterator it1 = m_reqs.begin();
+                it1 != m_reqs.end(); ++it1)
+        {
+            for (std::list<request>::iterator it2 = m_reqs.begin();
+                    it2 != m_reqs.end(); ++it2)
+            {
+                assert(it1 == it2 || it1->tg != it2->tg);
+            }
+        }
+    }
+}
+
 bool
 lock_state :: ensure_initialized(daemon* d)
 {
+    invariant_check();
+
     if (m_init)
     {
         return true;
@@ -251,6 +322,7 @@ lock_state :: ensure_initialized(daemon* d)
     }
 
     m_init = true;
+    invariant_check();
     return true;
 }
 
@@ -315,6 +387,7 @@ lock_state :: send_response(comm_id id, uint64_t nonce,
 {
     if (id == comm_id())
     {
+        LOG_IF(INFO, s_debug_mode) << logid() << " dropping response to null id";
         return;
     }
 
@@ -323,6 +396,7 @@ lock_state :: send_response(comm_id id, uint64_t nonce,
 
     if (!c->hash(d->m_us.dc, m_state_key.table, m_state_key.key, &rs))
     {
+        LOG_IF(INFO, s_debug_mode) << logid() << " dropping response to=" << id << " because hashing failed";
         return;
     }
 

@@ -37,6 +37,7 @@ class read_replicator
                       const replica_set& rs,
                       std::auto_ptr<e::buffer> backing, daemon* d);
         void externally_work_state_machine(daemon* d);
+        std::string debug_dump();
 
     private:
         struct read_stub;

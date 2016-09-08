@@ -163,6 +163,12 @@ write_replicator :: externally_work_state_machine(daemon* d)
 }
 
 std::string
+write_replicator :: debug_dump()
+{
+    return "XXX"; // XXX
+}
+
+std::string
 write_replicator :: logid()
 {
     return daemon::logid(m_table, m_key) + "-W-REP";

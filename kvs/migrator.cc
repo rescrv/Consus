@@ -73,6 +73,12 @@ migrator :: terminate()
     m_state = TERMINATED;
 }
 
+std::string
+migrator :: debug_dump()
+{
+    return "XXX"; // XXX
+}
+
 void
 migrator :: ensure_initialized(daemon* d)
 {

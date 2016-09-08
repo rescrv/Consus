@@ -32,6 +32,7 @@ class migrator
         void ack(version_id version, daemon* d);
         void externally_work_state_machine(daemon* d);
         void terminate();
+        std::string debug_dump();
 
     private:
         enum state_t

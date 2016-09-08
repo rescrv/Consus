@@ -989,7 +989,7 @@ daemon :: process_lv_vote_2b(comm_id id, std::auto_ptr<e::buffer>, e::unpacker u
 }
 
 void
-daemon :: process_lv_vote_learn(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
+daemon :: process_lv_vote_learn(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
     transaction_group tg;
     uint8_t idx;
@@ -1006,6 +1006,10 @@ daemon :: process_lv_vote_learn(comm_id, std::auto_ptr<e::buffer>, e::unpacker u
     if (xact)
     {
         xact->externally_work_state_machine(this);
+    }
+    else
+    {
+        LOG(INFO) << transaction_group::log(tg) + " data center voter: dropped learn from=" << id;
     }
 }
 
@@ -1029,7 +1033,7 @@ daemon :: process_commit_record(comm_id, std::auto_ptr<e::buffer> msg, e::unpack
 }
 
 void
-daemon :: process_gv_propose(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
+daemon :: process_gv_propose(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
     transaction_group tg;
     generalized_paxos::command c;
@@ -1048,6 +1052,10 @@ daemon :: process_gv_propose(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
         if (xact)
         {
             xact->externally_work_state_machine(this);
+        }
+        else
+        {
+            LOG(INFO) << transaction_group::log(tg) + " global voter: dropped propose from=" << id;
         }
     }
 }
@@ -1073,11 +1081,15 @@ daemon :: process_gv_vote_1a(comm_id id, std::auto_ptr<e::buffer>, e::unpacker u
         {
             xact->externally_work_state_machine(this);
         }
+        else
+        {
+            LOG(INFO) << transaction_group::log(tg) + " global voter: dropped 1a from=" << id;
+        }
     }
 }
 
 void
-daemon :: process_gv_vote_1b(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
+daemon :: process_gv_vote_1b(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
     transaction_group tg;
     generalized_paxos::message_p1b m;
@@ -1096,6 +1108,10 @@ daemon :: process_gv_vote_1b(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
         if (xact)
         {
             xact->externally_work_state_machine(this);
+        }
+        else
+        {
+            LOG(INFO) << transaction_group::log(tg) + " global voter: dropped 1b from=" << id;
         }
     }
 }
@@ -1121,11 +1137,15 @@ daemon :: process_gv_vote_2a(comm_id id, std::auto_ptr<e::buffer>, e::unpacker u
         {
             xact->externally_work_state_machine(this);
         }
+        else
+        {
+            LOG(INFO) << transaction_group::log(tg) + " global voter: dropped 2a from=" << id;
+        }
     }
 }
 
 void
-daemon :: process_gv_vote_2b(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
+daemon :: process_gv_vote_2b(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
     transaction_group tg;
     generalized_paxos::message_p2b m;
@@ -1145,11 +1165,15 @@ daemon :: process_gv_vote_2b(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
         {
             xact->externally_work_state_machine(this);
         }
+        else
+        {
+            LOG(INFO) << transaction_group::log(tg) + " global voter: dropped 2b from=" << id;
+        }
     }
 }
 
 void
-daemon :: process_kvs_rep_rd_resp(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
+daemon :: process_kvs_rep_rd_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
     uint64_t nonce;
     consus_returncode rc;
@@ -1165,10 +1189,14 @@ daemon :: process_kvs_rep_rd_resp(comm_id, std::auto_ptr<e::buffer>, e::unpacker
     {
         kv->response(rc, timestamp, value, this);
     }
+    else
+    {
+        LOG(INFO) << "dropped read response from=" << id << " nonce=" << nonce;
+    }
 }
 
 void
-daemon :: process_kvs_rep_wr_resp(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
+daemon :: process_kvs_rep_wr_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
     uint64_t nonce;
     consus_returncode rc;
@@ -1182,10 +1210,14 @@ daemon :: process_kvs_rep_wr_resp(comm_id, std::auto_ptr<e::buffer>, e::unpacker
     {
         kv->response(rc, this);
     }
+    else
+    {
+        LOG(INFO) << "dropped write response from=" << id << " nonce=" << nonce;
+    }
 }
 
 void
-daemon :: process_kvs_lock_op_resp(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
+daemon :: process_kvs_lock_op_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
     uint64_t nonce;
     consus_returncode rc;
@@ -1198,6 +1230,10 @@ daemon :: process_kvs_lock_op_resp(comm_id, std::auto_ptr<e::buffer>, e::unpacke
     if (kv)
     {
         kv->response(rc, this);
+    }
+    else
+    {
+        LOG(INFO) << "dropped lock op response from=" << id << " nonce=" << nonce;
     }
 }
 
@@ -1313,6 +1349,7 @@ daemon :: send(const paxos_group& g, std::auto_ptr<e::buffer> msg)
                 ++count;
                 break;
             case BUSYBEE_DISRUPTED:
+                LOG_IF(INFO, s_debug_mode) << "message not sent to " << g.members[i];
                 break;
             case BUSYBEE_SHUTDOWN:
             case BUSYBEE_INTERRUPTED:
