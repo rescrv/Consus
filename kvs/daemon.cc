@@ -1,6 +1,10 @@
 // Copyright (c) 2015, Robert Escriva
 // All rights reserved.
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 // C
 #include <limits.h>
 #include <stdio.h>
@@ -556,6 +560,14 @@ daemon :: loop(size_t thread)
             continue;
         }
 
+#ifdef CONSUS_LOG_ALL_MESSAGES
+        if (s_debug_mode)
+        {
+            memset(msg->data(), 0, BUSYBEE_HEADER_SIZE);
+            LOG(INFO) << "recv<-" << id << " " << mt << " " << msg->b64();
+        }
+#endif
+
         switch (mt)
         {
             case KVS_REP_RD:
@@ -1109,6 +1121,30 @@ daemon :: generate_id()
 bool
 daemon :: send(comm_id id, std::auto_ptr<e::buffer> msg)
 {
+#ifdef CONSUS_LOG_ALL_MESSAGES
+    if (s_debug_mode)
+    {
+        network_msgtype mt;
+        e::unpacker up = msg->unpack_from(BUSYBEE_HEADER_SIZE);
+        up = up >> mt;
+
+        if (up.error())
+        {
+            LOG(ERROR) << "sending invalid message: " << msg->b64();
+        }
+        else
+        {
+            LOG(INFO) << "send->" << id << " " << mt << " " << msg->b64();
+        }
+    }
+#endif
+
+    if (id == comm_id())
+    {
+        LOG_IF(INFO, s_debug_mode) << "message not sent: dropped";
+        return false;
+    }
+
     busybee_returncode rc = m_busybee->send(id.get(), msg);
 
     switch (rc)
@@ -1116,6 +1152,7 @@ daemon :: send(comm_id id, std::auto_ptr<e::buffer> msg)
         case BUSYBEE_SUCCESS:
             return true;
         case BUSYBEE_DISRUPTED:
+            LOG_IF(INFO, s_debug_mode) << "message not sent: disrupted";
             return false;
         case BUSYBEE_SHUTDOWN:
         case BUSYBEE_INTERRUPTED:

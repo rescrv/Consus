@@ -2,6 +2,7 @@
 // All rights reserved.
 
 // STL
+#include <sstream>
 #include <string>
 
 // Google Log
@@ -1037,6 +1038,15 @@ transaction :: externally_work_state_machine(daemon* d)
 }
 
 std::string
+transaction :: debug_dump()
+{
+    std::ostringstream ostr;
+    po6::threads::mutex::hold hold(&m_mtx);
+    ostr << m_state;
+    return ostr.str();
+}
+
+std::string
 transaction :: logid()
 {
     return transaction_group::log(m_tg);
@@ -1166,6 +1176,11 @@ transaction :: work_state_machine_local_commit_vote(daemon* d)
 {
     for (size_t i = 0; i < m_ops.size(); ++i)
     {
+        if (m_ops[i].type == LOG_ENTRY_NOP)
+        {
+            continue;
+        }
+
         send_paxos_2a(i, d);
         send_paxos_2b(i, d);
     }
@@ -1234,6 +1249,11 @@ transaction :: work_state_machine_global_commit_vote(daemon* d)
 
     for (size_t i = 0; i < m_ops.size(); ++i)
     {
+        if (m_ops[i].type == LOG_ENTRY_NOP)
+        {
+            continue;
+        }
+
         std::string log_entry = generate_log_entry(i);
         pa = pa << e::slice(log_entry);
     }
@@ -1956,4 +1976,24 @@ transaction :: send_to_nondurable(uint64_t seqno, std::auto_ptr<e::buffer> msg, 
         d->send(m_group.members[i], m);
         timestamps[i] = now;
     }
+}
+
+std::ostream&
+consus :: operator << (std::ostream& lhs, const transaction::state_t& rhs)
+{
+    switch (rhs)
+    {
+        STRINGIFYNS(transaction, INITIALIZED);
+        STRINGIFYNS(transaction, EXECUTING);
+        STRINGIFYNS(transaction, LOCAL_COMMIT_VOTE);
+        STRINGIFYNS(transaction, GLOBAL_COMMIT_VOTE);
+        STRINGIFYNS(transaction, COMMITTED);
+        STRINGIFYNS(transaction, ABORTED);
+        STRINGIFYNS(transaction, TERMINATED);
+        STRINGIFYNS(transaction, COLLECTED);
+        default:
+            lhs << "bad state";
+    }
+
+    return lhs;
 }

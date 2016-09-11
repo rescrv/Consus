@@ -212,7 +212,41 @@ lock_replicator :: externally_work_state_machine(daemon* d)
 std::string
 lock_replicator :: debug_dump()
 {
-    return "XXX"; // XXX
+    std::ostringstream ostr;
+    po6::threads::mutex::hold hold(&m_mtx);
+    ostr << "init=" << (m_init ? "yes" : "no") << "\n";
+    ostr << "finished=" << (m_finished ? "yes" : "no") << "\n";
+    ostr << "request id=" << m_id << " nonce=" << m_nonce << "\n";
+    ostr << "table=\"" << e::strescape(m_table.str()) << "\"\n";
+    ostr << "key=\"" << e::strescape(m_key.str()) << "\"\n";
+    ostr << "t/k logid=" << daemon::logid(m_table, m_key) << "\n";
+    ostr << "tx logid=" << transaction_group::log(m_tg) << "\n";
+    ostr << "tx=" << m_tg << "\n";
+
+    switch (m_op)
+    {
+        case LOCK_LOCK:
+            ostr << "op=" << "lock\n";
+            break;
+        case LOCK_UNLOCK:
+            ostr << "op=" << "unlock\n";
+            break;
+        default:
+            ostr << "op=" << "corrupt\n";
+            break;
+    }
+
+    for (size_t i = 0; i < m_requests.size(); ++i)
+    {
+        ostr << "request[" << i << "]"
+             << " target=" << m_requests[i].target
+             << " last_request_time=" << m_requests[i].last_request_time
+             << " transaction_group=" << m_requests[i].tg
+             << " replica_set=" << m_requests[i].rs
+             << "\n";
+    }
+
+    return ostr.str();
 }
 
 std::string

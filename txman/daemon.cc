@@ -1246,7 +1246,40 @@ daemon :: get_config()
 void
 daemon :: debug_dump()
 {
-    LOG(ERROR) << "DEBUG DUMP"; // XXX
+    // Intentionally collect std::string from other components and then
+    // split/etc here so that we can add a consistent prefix and so that it'll
+    // show up in the log nicely indented.  Factoring it into a new function
+    // would break this for relatively little savings.
+    LOG(INFO) << "=============================== Begin Debug Dump ===============================";
+    LOG(INFO) << "this host: " << m_us;
+    LOG(INFO) << "configuration version: " << get_config()->version().get();
+    LOG(INFO) << "note that entries can appear multiple times in the following tables";
+    LOG(INFO) << "this is a natural consequence of not holding global locks during the dump";
+    LOG(INFO) << "--------------------------------- Transactions ---------------------------------";
+
+    for (transaction_map_t::iterator it(&m_transactions); it.valid(); ++it)
+    {
+        transaction* xact = *it;
+        std::string debug = xact->debug_dump();
+        std::vector<std::string> lines = split_by_newlines(debug);
+
+        for (size_t i = 0; i < lines.size(); ++i)
+        {
+            LOG(INFO) << xact->logid() << " " << lines[i];
+        }
+    }
+
+#if 0
+    // XXX
+    LOG(INFO) << "--------------------------------- Local Voters ---------------------------------";
+    LOG(INFO) << "--------------------------------- Global Voters --------------------------------";
+    LOG(INFO) << "--------------------------------- Dispositions ---------------------------------";
+    LOG(INFO) << "-------------------------------- Read Operations -------------------------------";
+    LOG(INFO) << "------------------------------- Write Operations -------------------------------";
+    LOG(INFO) << "-------------------------------- Lock Operations -------------------------------";
+    LOG(INFO) << "---------------------------------- Durability ----------------------------------";
+#endif
+    LOG(INFO) << "================================ End Debug Dump ================================";
 }
 
 uint64_t

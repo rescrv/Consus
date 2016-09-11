@@ -81,13 +81,14 @@ class transaction
                                    uint64_t seqno, daemon*d);
 
         void externally_work_state_machine(daemon* d);
+        std::string debug_dump();
+        std::string logid();
 
     private:
         struct operation;
         struct comparison;
 
     private:
-        std::string logid();
         void ensure_initialized();
         void paxos_2a_begin(uint64_t seqno, e::unpacker up,
                             std::auto_ptr<e::buffer> backing, daemon* d);
@@ -191,6 +192,9 @@ class transaction
         transaction(const transaction&);
         transaction& operator = (const transaction&);
 };
+
+std::ostream&
+operator << (std::ostream& lhs, const transaction::state_t& rhs);
 
 END_CONSUS_NAMESPACE
 
