@@ -310,6 +310,7 @@ client :: create_data_center(const char* name, consus_returncode* status)
     }
 
     // XXX
+    if (data) free(data);
 #if 0
     coordinator_returncode crc;
     e::unpacker up(data, data_sz);
@@ -351,6 +352,7 @@ client :: set_default_data_center(const char* name, consus_returncode* status)
     }
 
     // XXX
+    if (data) free(data);
 #if 0
     coordinator_returncode crc;
     e::unpacker up(data, data_sz);
@@ -480,7 +482,12 @@ client :: availability_check(consus_availability_requirements* reqs,
         coordinator_returncode ccr;
         up = up >> ccr;
 
-        if (ccr == COORD_SUCCESS)
+        if (data)
+        {
+            free(data);
+        }
+
+        if (!up.error() && ccr == COORD_SUCCESS)
         {
             *status = CONSUS_SUCCESS;
             return 0;
