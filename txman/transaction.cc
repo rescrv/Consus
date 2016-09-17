@@ -1,6 +1,8 @@
 // Copyright (c) 2015, Robert Escriva
 // All rights reserved.
 
+#define __STDC_LIMIT_MACROS
+
 // STL
 #include <sstream>
 #include <string>
