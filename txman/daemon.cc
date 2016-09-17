@@ -5,7 +5,7 @@
 #include "config.h"
 #endif
 
-#define __STC_LIMIT_MACROS
+#define __STDC_LIMIT_MACROS
 
 // C
 #include <limits.h>
