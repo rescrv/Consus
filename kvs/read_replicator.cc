@@ -1,6 +1,8 @@
 // Copyright (c) 2016, Robert Escriva
 // All rights reserved.
 
+#define __STDC_LIMIT_MACROS
+
 // Google Log
 #include <glog/logging.h>
 
