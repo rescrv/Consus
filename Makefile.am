@@ -539,7 +539,7 @@ noinst_HEADERS += tools/connect_opts.h
 noinst_HEADERS += tools/locate-coordinator-lib.h
 
 bin_PROGRAMS += consus
-bin_PROGRAMS += consus-debug
+consusexec_PROGRAMS += consus-debug
 consusexec_PROGRAMS += consus-create-data-center
 consusexec_PROGRAMS += consus-set-default-data-center
 consusexec_PROGRAMS += consus-availability-check
