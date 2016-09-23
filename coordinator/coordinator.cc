@@ -596,7 +596,7 @@ void
 coordinator :: generate_next_configuration(rsm_context* ctx)
 {
     m_version = version_id(m_version.get() + 1);
-    rsm_log(ctx, "issuing new configuration version %" PRIu64 "\n", m_version);
+    rsm_log(ctx, "issuing new configuration version %" PRIu64 "\n", m_version.get());
     std::vector<txman> txmans;
 
     for (size_t i = 0; i < m_txmans.size(); ++i)

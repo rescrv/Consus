@@ -242,11 +242,11 @@ write_replicator :: work_state_machine(daemon* d)
 
     for (unsigned i = 0; i < rs.num_replicas; ++i)
     {
-        write_stub* owner1 = get_or_create_stub(rs.replicas[i]);
-        write_stub* owner2 = get_or_create_stub(rs.transitioning[i]);
+        ensure_stub_exists(rs.replicas[i]);
+        ensure_stub_exists(rs.transitioning[i]);
         // need to do it again in case anything was created
-        owner1 = get_stub(rs.replicas[i]);
-        owner2 = get_stub(rs.transitioning[i]);
+        write_stub* owner1 = get_stub(rs.replicas[i]);
+        write_stub* owner2 = get_stub(rs.transitioning[i]);
         assert(owner1);
 
         consus_returncode rc = owner1->status;

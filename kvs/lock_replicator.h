@@ -49,6 +49,7 @@ class lock_replicator
         std::string logid();
         lock_stub* get_stub(comm_id id);
         lock_stub* get_or_create_stub(comm_id id);
+        void ensure_stub_exists(comm_id id) { get_or_create_stub(id); }
         void work_state_machine(daemon* d);
         void send_lock_request(lock_stub* stub, uint64_t now, daemon* d);
 

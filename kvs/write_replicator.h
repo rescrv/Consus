@@ -50,6 +50,7 @@ class write_replicator
         // NULL for the default comm_id()
         write_stub* get_stub(comm_id id);
         write_stub* get_or_create_stub(comm_id id);
+        void ensure_stub_exists(comm_id id) { get_or_create_stub(id); }
         void work_state_machine(daemon* d);
         bool returncode_is_final(consus_returncode rc);
         void send_write_request(write_stub* stub, uint64_t now, daemon* d);
