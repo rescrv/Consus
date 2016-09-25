@@ -205,7 +205,7 @@ coordinator :: data_center_create(rsm_context* ctx, const std::string& name)
     }
 
     dc = new_data_center(name);
-    rsm_log(ctx, "created data center %s", e::strescape(name).c_str());
+    rsm_log(ctx, "created data center %s", e::strescape(dc->name).c_str());
     generate_next_configuration(ctx);
     return generate_response(ctx, COORD_SUCCESS);
 }
