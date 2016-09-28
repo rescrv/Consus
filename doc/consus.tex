@@ -7,26 +7,37 @@
 \newcommand*{\topdir}{..}%
 \fi
 
-\usepackage{hyperref}
-\usepackage{nameref}
-\usepackage{minted}
-\usepackage{graphicx}
-\usepackage{enumitem}
 \usepackage{calc}
-\usepackage{ulem}
+\usepackage[capitalise]{cleveref}
+\usepackage{enumitem}
+\usepackage{environ}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{lipsum}
+\usepackage{makeidx}
+\usepackage{minted}
+\usepackage{nameref}
 \usepackage{tikz}
-\usepackage{comment}
+\usepackage[tikz]{bclogo}
+\usepackage{ulem}
+\usepackage[many]{tcolorbox}
+\usepackage{etoolbox}
+\usepackage{ifthen}
+\usepackage{fontawesome}
+\usepackage{xcolor}
+\usepackage{tabularx}
 \usepackage[margin=1in]{geometry}
 \usepackage[small,compact]{titlesec}
 \usepackage[binary,squaren]{SIunits}
+\usepackage[framemethod=tikz]{mdframed}
 \usetikzlibrary{arrows}
+\usetikzlibrary{calc}
 \usetikzlibrary{decorations.markings}
-\usepackage{makeidx}
 
 \makeindex
 \AtBeginDocument{\renewcommand{\bibname}{References}}
 
-\newcommand{\ConsusVersion}{0.1.dev}
+\newcommand{\ConsusVersion}{0.0.dev}
 \newcommand{\code}[1]{\texttt{#1}}
 
 % http://texblog.org/2012/03/21/cross-referencing-list-items/
@@ -44,6 +55,8 @@
 \title{Consus Reference Manual v\ConsusVersion}
 \author{Consus Team}
 
+\BeforeBeginEnvironment{minted}{\begin{tcolorbox}}%
+\AfterEndEnvironment{minted}{\end{tcolorbox}}%
 \newminted{c}{samepage}
 \newminted{console}{samepage}
 \newminted{go}{samepage}
@@ -54,6 +67,8 @@
 \newminted{python}{samepage}
 \newminted{ruby}{samepage}
 
+\input{environs}
+
 \begin{document}
 
 \frontmatter
@@ -62,14 +77,13 @@
 
 \mainmatter
 
-\part{For Developers}
-\label{part:for-developers}
+\part{Working with Consus}
 
-\part{For Administrators}
-\label{part:for-admins}
+\input{\topdir/installation}
 
-\part{API Reference}
-\label{part:api-ref}
+%\part{Developing Consus}
+
+%\part{API Reference}
 
 \ifx \HCode\Undef % >>>>>>>>>>>>>>>>>>>
 \backmatter

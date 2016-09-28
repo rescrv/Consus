@@ -1,0 +1,112 @@
+\chapter{Installing Consus}
+\label{chap:installation}
+
+Consus provides two simple installation methods that work for a variety of
+environments.  For most users, the 64-bit Linux binary will be the fastest and
+easiest way to install Consus.  Users on other platforms, or those looking to
+customize Consus, can use the provided tarballs to install on their platform of
+choice.  \cref{tab:compat} provides a summary of the different installation
+methods to help decide which method best suits your needs.
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{r|l|l}
+            &   64-bit Linux Binary & Source Tarballs \\
+64-bit Linux compatible  & \faCheck  & \faCheck \\
+Tested binaries          & \faCheck  & \faTimes \\
+Client-only installation & \faTimes  & \faCheck \\
+Other operating systems  & \faTimes  & \faCheck \\
+Other CPU architectures  & \faTimes  & \faTimes\footnotemark \\
+\end{tabular}
+\caption{Comparison of Consus installation methods.}
+\label{tab:compat}
+\end{table}
+
+\footnotetext{Support for other architectures may be added as they become more
+common in server class hardware.}
+
+\section{Binaries for 64-bit Linux Platforms}
+\label{sec:install:bin}
+
+A tarball containing the binaries suitable for running on most modern Linux
+distributions can be found on the \href{http://consus.io/download/}{Consus
+downloads page}.  The binaries are compiled to work on most modern Linux
+distributions---specifically those using Linux kernel 2.6.19 or later and glibc
+2.6 or later\footnotemark.  The commands to extract the binaries from the
+tarball and add the binaries to your path are shown in
+\cref{code:install:bin-global}.
+
+\footnotetext{Linux 2.6.19 was released in November, 2006 and GNU libc 2.6.1 was
+released in August, 2007.  Ubuntu 7.10, Fedora 7, Debian 5, and Centos 6 are the
+first versions of major Linux distributions to meet the minimum software
+requirements.}
+
+\codeFromFile{console}{\topdir/install/linux-amd64}{Install to \code{/usr/local/consus}}{install:bin-global}
+
+This will create the directory \code{/usr/local/consus} and populate it with all
+the binaries necessary to run a Consus cluster.  While it is convention to
+install files into \code{/usr/local}, the installation process is largely
+directory-agnostic and can be installed anywhere on the filesystem.  This
+portability is useful for installations where root access is not available and
+you would like to install in your home directory.  \cref{code:install:bin-home}
+shows how to install Consus into the directory \code{\$HOME/consus}.
+
+\codeFromFile{console}{\topdir/install/linux-amd64-home}{Install to \code{\$HOME/consus}}{install:bin-home}
+
+\begin{consuscaution}{Compatibility Across Linux Distributions}
+    The Consus team has taken great care to test this binary on a variety of
+    mainstream Linux distributions.  Custom distributions where glibc or the
+    kernel have been built with atypical options, or where everything is
+    statically linked might not be able to run Consus properly.  If the binaries
+    do not work for you and your distribution is heavily customized, or built
+    from source, consider following the source-based installation instructions
+    instead as described in \cref{sec:install:src}.
+
+    \phantom{p}
+    
+    Feedback about which platforms work well and which have problems is always
+    appreciated as the team continues to improve Consus.
+\end{consuscaution}
+
+\section{Installing from Source Tarballs}
+\label{sec:install:src}
+
+Installing Consus from source tarballs is more complicated than the binary
+installation because it is dependent upon your platform and requires a few more
+commands to complete the installation.  The upside of the source tarballs is
+that they work in places that the pre-built binaries do not, and can be used to
+build distribution-specific packages.
+
+The installation broadly divides into two distinct steps.  In the first step, we
+will walk through preparing your system with all the prerequisites necessary to
+build Consus.  This includes setting up a working C compiler, and installing
+dependencies not managed by the Consus team.  In the second step, we will walk
+through the steps to install the packages maintained by the Consus team that
+together comprise Consus.
+
+\subsection{Preparing for Installation}
+
+The individual preparation steps depend heavily upon the target of your Consus
+installation.  We will walk through the exact commands necessary to install
+Consus on some of the common Linux distributions.  Depending on your setup, you
+may need to perform different or slightly altered steps for installing Consus.
+
+\paragraph{Preparing CentOS}
+\lipsum[4]
+
+\paragraph{Preparing Ubuntu}
+\lipsum[4]
+
+\paragraph{Preparing Debian}
+\lipsum[4]
+
+\paragraph{Preparing Fedora}
+\lipsum[4]
+
+\subsection{Installing Consus Components}
+
+\lipsum[4]
+
+\codeFromFile{console}{\topdir/install/source}{Install to \code{/usr/local}}{install:src}
+
+\lipsum[4]

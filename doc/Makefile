@@ -1,18 +1,18 @@
-.PHONY: all clean clobber data
-
 # Configuration variables
 
 TARGET = consus
 
-export CROSSTEX_FLAGS:= --add-in --add-proceedings --titlecase=title
+export CROSSTEX_FLAGS:= --add-in --add-proceedings --titlecase=title --cite-by initials
 
 # Rules that derive from configuration variables
+
+.PHONY: all clean clobber
 
 all: $(TARGET).pdf $(TARGET).ps
 	@echo "SUCCESS: dvi, ps, pdf all up-to-date"
 
-$(TARGET).dvi: $(TARGET).tex $(TARGET).xtx latex.py Makefile
-	python2 latex.py $(TARGET)
+$(TARGET).dvi: $(TARGET).tex $(wildcard *.tex) $(wildcard */*.tex) $(wildcard */*/*.tex) latex.py Makefile
+	python2 latex.py --crosstex --index $(TARGET)
 
 $(TARGET).ps: $(TARGET).dvi
 	dvips $(TARGET).dvi

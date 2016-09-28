@@ -1,0 +1,2 @@
+$ tar xzvf consus-0.0.dev.linux-amd64.tar.gz -C "${HOME}"
+$ export PATH="${HOME}/consus/bin:${PATH}"
