@@ -1,0 +1,78 @@
+% These boxes are all inspired by a solution from here:
+% http://tex.stackexchange.com/questions/66820/how-to-create-highlight-boxes-in-latex
+
+\NewEnviron{consuscaution}[1]
+  {\par\medskip\noindent
+  \begin{tikzpicture}
+    \node[inner sep=0pt] (box) {\parbox[t]{.99\textwidth}{%
+      \begin{minipage}{.2\textwidth}
+      \centering\tikz[scale=5]\node[scale=2]{\bctakecare};
+      \end{minipage}%
+      \begin{minipage}{.75\textwidth}
+      \textbf{#1}\par\smallskip
+      \BODY
+      \end{minipage}\hfill}%
+    };
+    \draw[red!75!black,line width=3pt] 
+      ( $ (box.north east) + (-5pt,3pt) $ ) -- ( $ (box.north east) + (0,3pt) $ ) -- ( $ (box.south east) + (0,-3pt) $ ) -- + (-5pt,0);
+    \draw[red!75!black,line width=3pt] 
+      ( $ (box.north west) + (5pt,3pt) $ ) -- ( $ (box.north west) + (0,3pt) $ ) -- ( $ (box.south west) + (0,-3pt) $ ) -- + (5pt,0);
+  \end{tikzpicture}\par\medskip%
+}
+
+% These boxes are all inspired by a solution from here:
+% http://tex.stackexchange.com/questions/304449/combine-minted-and-tcolorbox-for-code-from-file-inputminted
+
+\newcounter{codeCount}[chapter]
+\crefname{codeCount}{Code Listing}{Code Listings}
+
+\tcbuselibrary{listings}
+\tcbuselibrary{minted}
+
+\newcolumntype{\CeX}{>{\centering\let\newline\\\arraybackslash}X}%
+\newcommand{\SymbolAndText}[2]{%
+  \begin{tabularx}{\textwidth}{c\CeX c}%
+    #1 & #2
+  \end{tabularx}%
+}
+
+\newtcbinputlisting[use counter=codeCount, number format=\arabic]{\codeFromFile}[4]{%
+  listing engine=minted,
+  minted language=#1,
+  listing file={#2},
+  minted options={autogobble,linenos,breaklines},
+  listing only,
+  size=title,
+  arc=1.5mm,
+  breakable,
+  enhanced jigsaw,
+  colframe=red!75!black,
+  coltitle=white,
+  boxrule=0.5mm,
+  colback=white,
+  coltext=black,
+  title=\SymbolAndText{\faCode}{%
+    \textbf{Code Listing \thetcbcounter}\ifthenelse{\equal{#3}{}}{}{\textbf{:} #3}%
+  },
+  label=code:#4
+}
+
+\newtcblisting[use counter=codeCount, number format=\arabic]{codeBox}[3]{
+  listing engine=minted,
+  minted language=#1,
+  minted options={autogobble,linenos,breaklines},
+  listing only,
+  size=title,
+  arc=1.5mm,
+  breakable,
+  enhanced jigsaw,
+  colframe=red!75!black,
+  coltitle=white,
+  boxrule=0.5mm,
+  colback=white,
+  coltext=black,
+  title=\SymbolAndText{\faCode}{%
+    \textbf{Code Listing \thetcbcounter}\ifthenelse{\equal{#2}{}}{}{\textbf{:} #2}%
+  },
+  label=code:#3
+}
