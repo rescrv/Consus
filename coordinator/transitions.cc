@@ -105,11 +105,12 @@ consus_coordinator_txman_register(rsm_context* ctx, void* obj, const char* data,
     PROTECT_UNINITIALIZED;
     comm_id id;
     po6::net::location bind_to;
+    e::slice data_center;
     e::unpacker up(data, data_sz);
-    up = up >> id >> bind_to;
+    up = up >> id >> bind_to >> data_center;
     CHECK_UNPACK(txman_register);
     txman t(id, bind_to);
-    c->txman_register(ctx, t);
+    c->txman_register(ctx, t, data_center.str());
 }
 
 CONSUS_API void
@@ -144,11 +145,12 @@ consus_coordinator_kvs_register(rsm_context* ctx, void* obj, const char* data, s
     PROTECT_UNINITIALIZED;
     comm_id id;
     po6::net::location bind_to;
+    e::slice data_center;
     e::unpacker up(data, data_sz);
-    up = up >> id >> bind_to;
+    up = up >> id >> bind_to >> data_center;
     CHECK_UNPACK(kvs_register);
     kvs k(id, bind_to);
-    c->kvs_register(ctx, k);
+    c->kvs_register(ctx, k, data_center.str());
 }
 
 CONSUS_API void

@@ -25,11 +25,13 @@ using consus::coordinator_link;
 
 coordinator_link :: coordinator_link(const std::string& rendezvous,
                                      comm_id id, po6::net::location bind_to,
+                                     const std::string& data_center,
                                      callback* c/*ownership not transferred*/)
     : m_mtx()
     , m_repl(replicant_client_create_conn_str(rendezvous.c_str()))
     , m_id(id)
     , m_bind_to(bind_to)
+    , m_data_center(data_center)
     , m_cb(c)
     , m_config_id(-1)
     , m_config_status(REPLICANT_SUCCESS)
@@ -301,7 +303,7 @@ coordinator_link :: registration()
 {
     std::string func = m_cb->prefix() + "_register";
     std::string input;
-    e::packer(&input) << m_id << m_bind_to;
+    e::packer(&input) << m_id << m_bind_to << e::slice(m_data_center);
     coordinator_returncode rc;
 
     if (!call_no_lock(func.c_str(), input.data(), input.size(), &rc))
@@ -316,8 +318,10 @@ coordinator_link :: registration()
         case COORD_DUPLICATE:
             LOG(ERROR) << "cannot register: another server already registered this identity";
             return false;
-        case COORD_MALFORMED:
         case COORD_NOT_FOUND:
+            LOG(ERROR) << "cannot register: unknown data center";
+            return false;
+        case COORD_MALFORMED:
         case COORD_UNINITIALIZED:
         case COORD_NO_CAN_DO:
         default:

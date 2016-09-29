@@ -40,6 +40,7 @@ main(int argc, const char* argv[])
     bool listen = false;
     const char* listen_host = "auto";
     long listen_port = CONSUS_PORT_KVS;
+    const char* data_center = "";
     const char* pidfile = "";
     bool has_pidfile = false;
     long threads = 0;
@@ -74,6 +75,9 @@ main(int argc, const char* argv[])
     ap.arg().name('p', "listen-port")
             .description("listen on an alternative port (default: " STR(CONSUS_PORT_KVS) ")")
             .metavar("port").as_long(&listen_port).set_true(&listen);
+    ap.arg().name('c', "data-center")
+            .description("data center containing this key value store")
+            .metavar("name").as_string(&data_center);
     ap.arg().long_name("pidfile")
             .description("write the PID to a file (default: don't)")
             .metavar("file").as_string(&pidfile).set_true(&has_pidfile);
@@ -184,7 +188,8 @@ main(int argc, const char* argv[])
                      std::string(log ? log : data),
                      std::string(pidfile), has_pidfile,
                      listen, bind_to,
-                     conn.isset(), conn.conn_str(), threads);
+                     conn.isset(), conn.conn_str(),
+                     data_center, threads);
     }
     catch (std::exception& e)
     {

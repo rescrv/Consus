@@ -258,6 +258,7 @@ daemon :: run(bool background,
               po6::net::location bind_to,
               bool set_coordinator,
               const char* coordinator,
+              const char* data_center,
               unsigned threads)
 {
     if (!e::block_all_signals())
@@ -320,7 +321,7 @@ daemon :: run(bool background,
     }
 
     m_coord_cb.reset(new coordinator_callback(this));
-    m_coord.reset(new coordinator_link(rendezvous, m_us.id, m_us.bind_to, m_coord_cb.get()));
+    m_coord.reset(new coordinator_link(rendezvous, m_us.id, m_us.bind_to, data_center, m_coord_cb.get()));
     m_coord->allow_reregistration();
     LOG(INFO) << "starting consus transaction-manager " << m_us.id
               << " on address " << m_us.bind_to;

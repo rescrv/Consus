@@ -240,7 +240,7 @@ coordinator :: new_txman(const txman& t)
 }
 
 void
-coordinator :: txman_register(rsm_context* ctx, const txman& t)
+coordinator :: txman_register(rsm_context* ctx, const txman& t, const std::string& dc_name)
 {
     txman_state* ts = get_txman(t.id);
 
@@ -250,8 +250,23 @@ coordinator :: txman_register(rsm_context* ctx, const txman& t)
         return generate_response(ctx, consus::COORD_DUPLICATE);
     }
 
+    data_center_id dcid = m_dc_default;
+
+    if (dc_name != "")
+    {
+        data_center* dc = get_data_center(dc_name);
+
+        if (!dc)
+        {
+            rsm_log(ctx, "register %s failed: data center %s doesn't exist", to_string(t).c_str(), dc_name.c_str());
+            return generate_response(ctx, consus::COORD_NOT_FOUND);
+        }
+
+        dcid = dc->id;
+    }
+
     ts = new_txman(t);
-    ts->tx.dc = m_dc_default;
+    ts->tx.dc = dcid;
     rsm_log(ctx, "registered %s", to_string(t).c_str());
     generate_next_configuration(ctx);
     return generate_response(ctx, COORD_SUCCESS);
@@ -369,7 +384,7 @@ coordinator :: new_kvs(const kvs& k)
 }
 
 void
-coordinator :: kvs_register(rsm_context* ctx, const kvs& k)
+coordinator :: kvs_register(rsm_context* ctx, const kvs& k, const std::string& dc_name)
 {
     kvs_state* kv = get_kvs(k.id);
 
@@ -379,8 +394,23 @@ coordinator :: kvs_register(rsm_context* ctx, const kvs& k)
         return generate_response(ctx, consus::COORD_DUPLICATE);
     }
 
+    data_center_id dcid = m_dc_default;
+
+    if (dc_name != "")
+    {
+        data_center* dc = get_data_center(dc_name);
+
+        if (!dc)
+        {
+            rsm_log(ctx, "register %s failed: data center %s doesn't exist", to_string(k).c_str(), dc_name.c_str());
+            return generate_response(ctx, consus::COORD_NOT_FOUND);
+        }
+
+        dcid = dc->id;
+    }
+
     kv = new_kvs(k);
-    kv->kv.dc = m_dc_default;
+    kv->kv.dc = dcid;
     rsm_log(ctx, "registered %s", to_string(k).c_str());
     generate_next_configuration(ctx);
     return generate_response(ctx, COORD_SUCCESS);

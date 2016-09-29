@@ -46,7 +46,7 @@ class coordinator
     public:
         txman_state* get_txman(comm_id tx);
         txman_state* new_txman(const txman& t);
-        void txman_register(rsm_context* ctx, const txman& t);
+        void txman_register(rsm_context* ctx, const txman& t, const std::string& data_center);
         void txman_online(rsm_context* ctx, comm_id id, const po6::net::location& bind_to, uint64_t nonce);
         void txman_offline(rsm_context* ctx, comm_id id, const po6::net::location& bind_to, uint64_t nonce);
 
@@ -54,7 +54,7 @@ class coordinator
     public:
         kvs_state* get_kvs(comm_id tx);
         kvs_state* new_kvs(const kvs& t);
-        void kvs_register(rsm_context* ctx, const kvs& t);
+        void kvs_register(rsm_context* ctx, const kvs& t, const std::string& data_center);
         void kvs_online(rsm_context* ctx, comm_id id, const po6::net::location& bind_to, uint64_t nonce);
         void kvs_offline(rsm_context* ctx, comm_id id, const po6::net::location& bind_to, uint64_t nonce);
         void kvs_migrated(rsm_context* ctx, partition_id part);

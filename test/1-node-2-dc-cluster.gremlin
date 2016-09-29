@@ -23,23 +23,10 @@ run replicant availability-check --servers 1 --timeout 30 --host 127.0.0.1 --por
 
 run consus create-data-center --cluster 127.0.0.1:1982 dc1
 run consus create-data-center --cluster 127.0.0.1:1982 dc2
+daemon consus transaction-manager --debug --foreground --data=txman1.dc1 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 22751 --data-center dc1
+daemon consus key-value-store --debug --foreground --data=kvs1.dc1 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 22761 --data-center dc1
+daemon consus transaction-manager --debug --foreground --data=txman1.dc2 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 23751 --data-center dc2
+daemon consus key-value-store --debug --foreground --data=kvs1.dc2 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 23761 --data-center dc2
 
-run consus set-default-data-center dc1
-daemon consus transaction-manager --debug --foreground --data=txman1.dc1 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 22751
-run consus availability-check --transaction-managers 1 --transaction-manager-groups 1 --timeout 30
-
-run consus set-default-data-center dc2
-daemon consus transaction-manager --debug --foreground --data=txman1.dc2 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 23751
-run consus availability-check --transaction-managers 2 --transaction-manager-groups 2 --timeout 30
-
-run consus set-default-data-center dc1
-daemon consus key-value-store --debug --foreground --data=kvs1.dc1 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 22761
-run consus availability-check --key-value-stores 1 --timeout 30
-
-run consus set-default-data-center dc2
-daemon consus key-value-store --debug --foreground --data=kvs1.dc2 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 23761
-run consus availability-check --key-value-stores 2 --timeout 30
-
-run replicant availability-check --servers 1 --timeout 30 --host 127.0.0.1 --port 1982
-run consus availability-check --stable
+run consus availability-check --stable --transaction-managers 2 --key-value-stores 2 --transaction-manager-groups 2 --timeout 30
 run sleep 10 # XXX

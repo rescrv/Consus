@@ -29,6 +29,7 @@ class coordinator_link
     public:
         coordinator_link(const std::string& rendezvous,
                          comm_id id, po6::net::location bind_to,
+                         const std::string& data_center,
                          callback* c/*ownership not transferred*/);
         ~coordinator_link() throw ();
 
@@ -43,7 +44,7 @@ class coordinator_link
 
         // claim the token again in steady state if removed; default is to set
         // "orphaned" and cease further activity (expecting the process to
-        // self-terminated).
+        // self-terminate).
         void allow_reregistration();
 
     // maintenance:  steady-state operation
@@ -73,6 +74,7 @@ class coordinator_link
         replicant_client* const m_repl;
         const comm_id m_id;
         const po6::net::location m_bind_to;
+        const std::string m_data_center;
         callback* const m_cb;
         int64_t m_config_id;
         replicant_returncode m_config_status;

@@ -55,6 +55,7 @@ class daemon
                 po6::net::location bind_to,
                 bool set_coordinator,
                 const char* coordinator,
+                const char* data_center,
                 unsigned threads);
 
     private:
