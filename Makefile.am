@@ -531,7 +531,7 @@ test_paxos_generalized_brute_force_SOURCES = test/paxos/generalized-brute-force.
 test_paxos_generalized_brute_force_LDADD = ${E_LIBS} $(POPT_LIBS)
 
 consus-tests.tar.gz: $(wildcard test/*.gremlin) $(wildcard test/*/*.gremlin) $(wildcard test/*.sh) $(wildcard test/*/*.sh) $(wildcard test/*.py) $(wildcard test/*/*.py)
-	tar czvf $@ --transform 's/test\//${PACKAGE_TARNAME}-${PACKAGE_VERSION}\//' $^
+	tar czvf $@ --transform 's,test/,${PACKAGE_TARNAME}-${PACKAGE_VERSION}/,' $^
 
 ################################################################################
 ##################################### Tools ####################################
