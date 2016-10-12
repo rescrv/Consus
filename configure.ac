@@ -58,5 +58,5 @@ if test x"${enable_logall}" = xyes; then
     AC_DEFINE([CONSUS_LOG_ALL_MESSAGES], [], [Log all network traffic at the INFO level])
 fi
 
-AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([Makefile libconsus.pc])
 AC_OUTPUT

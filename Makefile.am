@@ -34,6 +34,8 @@ consusexec_LTLIBRARIES =
 
 dist_man_MANS =
 
+pkgconfig_DATA =
+
 pyexec_LTLIBRARIES =
 
 TESTS =
@@ -266,6 +268,7 @@ man/consus-coordinator.1: man/consus-coordinator.1.h2m | consus-coordinator${EXE
 include_HEADERS += include/consus.h
 include_HEADERS += include/consus-admin.h
 include_HEADERS += include/consus-unsafe.h
+pkgconfig_DATA += libconsus.pc
 
 lib_LTLIBRARIES += libconsus.la
 

@@ -32,6 +32,7 @@
 /consus-transaction-manager
 /depcomp
 /install-sh
+/libconsus.pc
 /libtool
 /ltmain.sh
 /m4
