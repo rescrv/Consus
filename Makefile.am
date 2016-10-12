@@ -349,6 +349,7 @@ pyexec_LTLIBRARIES += bindings/python/consus.la
 CLEANFILES += bindings/python/consus.so
 
 EXTRA_DIST += bindings/python/consus.pyx
+EXTRA_DIST += bindings/python/setup.py
 bindings_python_consus_la_SOURCES = bindings/python/consus.c
 bindings_python_consus_la_CPPFLAGS =
 bindings_python_consus_la_CPPFLAGS += $(PYTHON_CPPFLAGS)
