@@ -4,15 +4,25 @@ import subprocess
 
 from setuptools import setup, find_packages, Extension
 
+def silent_fail(args):
+    try:
+        return subprocess.check_output(args).decode('utf8')
+    except subprocess.CalledProcessError:
+        return ''
+
 deps = ('libconsus',)
-includes = subprocess.check_output(('pkg-config', '--cflags-only-I') + deps).decode('utf8')
+includes = silent_fail(('pkg-config', '--cflags-only-I') + deps)
 includes = [x.strip() for x in includes.split('-I') if x.strip()]
-libraries = subprocess.check_output(('pkg-config', '--libs-only-l') + deps).decode('utf8')
+library_dirs = silent_fail(('pkg-config', '--libs-only-L') + deps)
+library_dirs = [x.strip() for x in library_dirs.split('-L') if x.strip()]
+libraries = silent_fail(('pkg-config', '--libs-only-l') + deps)
 libraries = [x.strip() for x in libraries.split('-l') if x.strip()]
 
 consus = Extension('consus',
                  sources=['consus.c'],
                  include_dirs=includes,
+                 library_dirs=library_dirs,
+                 runtime_library_dirs=library_dirs,
                  libraries=libraries
                  )
 
