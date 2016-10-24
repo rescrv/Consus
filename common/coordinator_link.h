@@ -88,6 +88,7 @@ class coordinator_link
         bool m_error;
         bool m_orphaned;
         bool m_online_once;
+        uint64_t m_backoff;
 
     private:
         coordinator_link(const coordinator_link&);

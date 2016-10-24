@@ -12,6 +12,7 @@
 
 // po6
 #include <po6/io/fd.h>
+#include <po6/time.h>
 
 // e
 #include <e/daemon.h>
@@ -45,6 +46,7 @@ coordinator_link :: coordinator_link(const std::string& rendezvous,
     , m_error(false)
     , m_orphaned(false)
     , m_online_once(false)
+    , m_backoff(250 * PO6_MILLIS)
 {
     if (!m_repl)
     {
@@ -167,7 +169,11 @@ coordinator_link :: maintain_connection()
         }
         else if (rc == REPLICANT_COMM_FAILED)
         {
-            // XXX
+            LOG(ERROR) << "coordinator failure: " << replicant_client_error_message(m_repl);
+            LOG(ERROR) << "backing off for " << (m_backoff / PO6_MILLIS) << " milliseconds";
+            po6::sleep(m_backoff);
+            m_backoff *= 2;
+            return;
         }
         else
         {
@@ -175,6 +181,8 @@ coordinator_link :: maintain_connection()
             return;
         }
     }
+
+    m_backoff = 250 * PO6_MILLIS;
 
     if (m_last_config_state < m_config_state)
     {
