@@ -1,0 +1,1 @@
+$ dnf install -y gcc pkgconfig python-devel
