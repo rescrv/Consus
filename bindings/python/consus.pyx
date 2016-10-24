@@ -32,6 +32,7 @@ cdef extern from "consus.h":
         CONSUS_LESS_DURABLE  = 6657
         CONSUS_NOT_FOUND     = 6658
         CONSUS_ABORTED       = 6659
+        CONSUS_COMMITTED     = 6660
         CONSUS_UNKNOWN_TABLE = 6720
         CONSUS_NONE_PENDING  = 6721
         CONSUS_INVALID       = 6722
@@ -95,6 +96,47 @@ cdef extern from "consus-unsafe.h":
                                  const char* table,
                                  const char* key, size_t key_sz,
                                  consus_returncode* status);
+
+
+class ConsusException(Exception):
+
+    def __init__(self, status, message):
+        super(ConsusException, self).__init__(self)
+        self._status = status
+        self._symbol = consus_returncode_to_string(self._status)
+        self._message = message
+
+    def status(self):
+        return self._status
+
+    def symbol(self):
+        return self._symbol
+
+    def message(self):
+        return self._message
+
+    def __str__(self):
+        return 'ConsusException: {0} [{1}]'.format(self.message(), self.symbol())
+
+    def __repr__(self):
+        return str(self)
+
+
+class ConsusLessDurableException(ConsusException): pass
+class ConsusNotFoundException(ConsusException): pass
+class ConsusAbortedException(ConsusException): pass
+class ConsusCommittedException(ConsusException): pass
+class ConsusUnknownTableException(ConsusException): pass
+class ConsusNonePendingException(ConsusException): pass
+class ConsusInvalidException(ConsusException): pass
+class ConsusTimeoutException(ConsusException): pass
+class ConsusInterruptedException(ConsusException): pass
+class ConsusSeeErrnoException(ConsusException): pass
+class ConsusCoordFailException(ConsusException): pass
+class ConsusUnavailableException(ConsusException): pass
+class ConsusServerErrorException(ConsusException): pass
+class ConsusInternalException(ConsusException): pass
+class ConsusGarbageException(ConsusException): pass
 
 
 cdef class Client:
@@ -186,22 +228,31 @@ cdef class Client:
     cdef finish(self, int64_t req, consus_returncode* rstatus):
         cdef consus_returncode lstatus
         if req < 0:
-            print consus_error_message(self.client).decode('ascii', 'ignore'), '@', \
-                  consus_error_location(self.client).decode('ascii', 'ignore'), ' ', \
-                  consus_returncode_to_string(rstatus[0]).decode('ascii', 'ignore')
-            assert False # XXX
+            self.throw_exception(rstatus[0])
         lid = consus_wait(self.client, req, -1, &lstatus);
         if lid < 0:
-            print consus_error_message(self.client).decode('ascii', 'ignore'), '@', \
-                  consus_error_location(self.client).decode('ascii', 'ignore'), ' ', \
-                  consus_returncode_to_string(lstatus).decode('ascii', 'ignore')
-            assert False # XXX
+            self.throw_exception(lstatus)
         assert req == lid
         if rstatus[0] != CONSUS_SUCCESS and rstatus[0] != CONSUS_NOT_FOUND and rstatus[0] != CONSUS_LESS_DURABLE:
-            print consus_error_message(self.client).decode('ascii', 'ignore'), '@', \
-                  consus_error_location(self.client).decode('ascii', 'ignore'), ' ', \
-                  consus_returncode_to_string(rstatus[0]).decode('ascii', 'ignore')
-            assert False # XXX
+            self.throw_exception(rstatus[0])
+
+    cdef throw_exception(self, consus_returncode status):
+        exception = {CONSUS_LESS_DURABLE: ConsusLessDurableException,
+                     CONSUS_NOT_FOUND: ConsusNotFoundException,
+                     CONSUS_ABORTED: ConsusAbortedException,
+                     CONSUS_COMMITTED: ConsusCommittedException,
+                     CONSUS_UNKNOWN_TABLE: ConsusUnknownTableException,
+                     CONSUS_NONE_PENDING: ConsusNonePendingException,
+                     CONSUS_INVALID: ConsusInvalidException,
+                     CONSUS_TIMEOUT: ConsusTimeoutException,
+                     CONSUS_INTERRUPTED: ConsusInterruptedException,
+                     CONSUS_SEE_ERRNO: ConsusSeeErrnoException,
+                     CONSUS_COORD_FAIL: ConsusCoordFailException,
+                     CONSUS_UNAVAILABLE: ConsusUnavailableException,
+                     CONSUS_SERVER_ERROR: ConsusServerErrorException,
+                     CONSUS_INTERNAL: ConsusInternalException,
+                     CONSUS_GARBAGE: ConsusGarbageException}.get(status, ConsusInternalException)
+        raise exception(status, consus_error_message(self.client).decode('ascii', 'ignore'))
 
 
 cdef class Transaction:
