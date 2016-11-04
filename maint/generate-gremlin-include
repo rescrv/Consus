@@ -38,13 +38,10 @@ out += '\n'
 for dc in range(1, DC + 1):
     out += 'run mkdir ' + ' '.join('kvs%d.dc%d' % (i, dc) for i in range(1, R + 1)) + '\n'
 out += '\n'
-#XXX conn_str = ','.join('127.0.0.1:%d' % (PORT_COORD + i) for i in range(R))
-conn_str = ','.join('127.0.0.1:%d' % (PORT_COORD + i) for i in range(1))
-#XXX for i in range(R):
-for i in range(1):
+conn_str = ','.join('127.0.0.1:%d' % (PORT_COORD + i) for i in range(R))
+for i in range(R):
     out += 'daemon consus coordinator --foreground --data=coord{0} --listen 127.0.0.1 --listen-port {1}{2}\n'.format(i + 1, PORT_COORD + i, ' --connect-string ' + conn_str if i > 0 else '')
-#XXX out += 'run replicant availability-check --servers {0} --timeout 30 --host 127.0.0.1 --port {1}\n'.format(R, PORT_COORD + R - 1)
-out += 'run replicant availability-check --servers {0} --timeout 30 --host 127.0.0.1 --port {1}\n'.format(1, PORT_COORD)
+out += 'run replicant availability-check --servers {0} --timeout 30 --host 127.0.0.1 --port {1}\n'.format(R, PORT_COORD + R - 1)
 out += '\n'
 for dc in range(1, DC + 1):
     out += 'run consus create-data-center --cluster {0} dc{1}\n'.format(conn_str, dc)

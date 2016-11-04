@@ -581,10 +581,9 @@ coordinator :: tick(rsm_context* ctx)
 }
 
 coordinator*
-coordinator :: recreate(rsm_context* ctx,
+coordinator :: recreate(rsm_context* /*ctx*/,
                         const char* data, size_t data_sz)
 {
-    // XXX
     std::auto_ptr<coordinator> c(new coordinator());
 
     if (!c.get())
@@ -592,11 +591,25 @@ coordinator :: recreate(rsm_context* ctx,
         return NULL;
     }
 
-    e::unpacker(data, data_sz)
-        >> c->m_cluster >> c->m_version
-        >> c->m_flags >> c->m_counter
-        >> c->m_txmans;
-    c->generate_next_configuration(ctx);
+    e::unpacker up(data, data_sz);
+    up = up >> c->m_cluster >> c->m_version
+            >> c->m_flags >> c->m_counter
+            >> c->m_dc_default >> c->m_dcs
+            >> c->m_txmans
+            >> c->m_txman_groups
+            >> c->m_txman_quiescence_counter
+            >> e::unpack_uint8<bool>(c->m_txmans_changed)
+            >> c->m_kvss
+            >> c->m_kvs_quiescence_counter
+            >> e::unpack_uint8<bool>(c->m_kvss_changed)
+            >> c->m_rings
+            >> c->m_migrated;
+
+    if (up.error())
+    {
+        return NULL;
+    }
+
     return c.release();
 }
 
@@ -604,12 +617,20 @@ int
 coordinator :: snapshot(rsm_context* /*ctx*/,
                         char** data, size_t* data_sz)
 {
-    // XXX
     std::string buf;
     e::packer(&buf)
         << m_cluster << m_version
         << m_flags << m_counter
-        << m_txmans;
+        << m_dc_default << m_dcs
+        << m_txmans
+        << m_txman_groups
+        << m_txman_quiescence_counter
+        << e::pack_uint8<bool>(m_txmans_changed)
+        << m_kvss
+        << m_kvs_quiescence_counter
+        << e::pack_uint8<bool>(m_kvss_changed)
+        << m_rings
+        << m_migrated;
     char* ptr = static_cast<char*>(malloc(buf.size()));
     *data = ptr;
     *data_sz = buf.size();
