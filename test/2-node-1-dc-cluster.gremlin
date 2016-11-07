@@ -15,14 +15,13 @@ run mkdir txman1.dc1 txman2.dc1
 run mkdir kvs1.dc1 kvs2.dc1
 
 daemon consus coordinator --foreground --data=coord1 --listen 127.0.0.1 --listen-port 1982
-daemon consus coordinator --foreground --data=coord2 --listen 127.0.0.1 --listen-port 1983 --connect-string 127.0.0.1:1982,127.0.0.1:1983
-run replicant availability-check --servers 2 --timeout 30 --host 127.0.0.1 --port 1983
+run replicant availability-check --servers 1 --timeout 30 --host 127.0.0.1 --port 1982
 
-run consus create-data-center --cluster 127.0.0.1:1982,127.0.0.1:1983 dc1
-daemon consus transaction-manager --debug --foreground --data=txman1.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983 --listen 127.0.0.1 --listen-port 22751 --data-center dc1
-daemon consus key-value-store --debug --foreground --data=kvs1.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983 --listen 127.0.0.1 --listen-port 22761 --data-center dc1
-daemon consus transaction-manager --debug --foreground --data=txman2.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983 --listen 127.0.0.1 --listen-port 22752 --data-center dc1
-daemon consus key-value-store --debug --foreground --data=kvs2.dc1 --connect-string 127.0.0.1:1982,127.0.0.1:1983 --listen 127.0.0.1 --listen-port 22762 --data-center dc1
+run consus create-data-center --cluster 127.0.0.1:1982 dc1
+daemon consus transaction-manager --debug --foreground --data=txman1.dc1 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 22751 --data-center dc1
+daemon consus key-value-store --debug --foreground --data=kvs1.dc1 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 22761 --data-center dc1
+daemon consus transaction-manager --debug --foreground --data=txman2.dc1 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 22752 --data-center dc1
+daemon consus key-value-store --debug --foreground --data=kvs2.dc1 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 22762 --data-center dc1
 
 run consus availability-check --stable --transaction-managers 2 --key-value-stores 2 --transaction-manager-groups 1 --timeout 30
 run sleep 10 # XXX
