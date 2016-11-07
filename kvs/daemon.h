@@ -105,6 +105,7 @@ class daemon
         uint64_t generate_id();
         uint64_t resend_interval() { return PO6_SECONDS; }
         bool send(comm_id id, std::auto_ptr<e::buffer> msg);
+        void pump();
 
     private:
         kvs m_us;

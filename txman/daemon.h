@@ -131,6 +131,7 @@ class daemon
         void send_when_durable(int64_t idx, const comm_id* ids, e::buffer** msgs, size_t sz);
         void callback_when_durable(const std::string& entry, const transaction_group& tg, uint64_t seqno);
         void durable();
+        void pump();
 
     private:
         txman m_us;
@@ -156,6 +157,9 @@ class daemon
         int64_t m_durable_up_to;
         durable_msg_heap_t m_durable_msgs;
         durable_cb_heap_t m_durable_cbs;
+
+        // state machine pumping
+        po6::threads::thread m_pumping_thread;
 
     private:
         daemon(const daemon&);

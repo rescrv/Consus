@@ -240,6 +240,7 @@ daemon :: daemon()
     , m_durable_up_to(-1)
     , m_durable_msgs()
     , m_durable_cbs()
+    , m_pumping_thread(po6::threads::make_obj_func(&daemon::pump, this))
 {
 }
 
@@ -1633,4 +1634,49 @@ daemon :: durable()
     }
 
     LOG(INFO) << "durability monitor shutting down";
+}
+
+void
+daemon :: pump()
+{
+    sigset_t ss;
+
+    if (sigfillset(&ss) < 0 ||
+        pthread_sigmask(SIG_BLOCK, &ss, NULL) < 0)
+    {
+        LOG(ERROR) << "could not successfully block signals; this could result in undefined behavior";
+        return;
+    }
+
+    LOG(INFO) << "pumping thread started";
+
+    while (true)
+    {
+        sleep(PO6_MILLIS * 250);
+
+        if (e::atomic::increment_32_nobarrier(&s_interrupts, 0) > 0)
+        {
+            break;
+        }
+
+        for (transaction_map_t::iterator it(&m_transactions); it.valid(); ++it)
+        {
+            transaction* xact = *it;
+            xact->externally_work_state_machine(this);
+        }
+
+        for (local_voter_map_t::iterator it(&m_local_voters); it.valid(); ++it)
+        {
+            local_voter* lv = *it;
+            lv->externally_work_state_machine(this);
+        }
+
+        for (global_voter_map_t::iterator it(&m_global_voters); it.valid(); ++it)
+        {
+            global_voter* lv = *it;
+            lv->externally_work_state_machine(this);
+        }
+    }
+
+    LOG(INFO) << "pumping thread shutting down";
 }

@@ -1166,3 +1166,54 @@ daemon :: send(comm_id id, std::auto_ptr<e::buffer> msg)
             abort();
     }
 }
+
+void
+daemon :: pump()
+{
+    sigset_t ss;
+
+    if (sigfillset(&ss) < 0 ||
+        pthread_sigmask(SIG_BLOCK, &ss, NULL) < 0)
+    {
+        LOG(ERROR) << "could not successfully block signals; this could result in undefined behavior";
+        return;
+    }
+
+    LOG(INFO) << "pumping thread started";
+
+    while (true)
+    {
+        sleep(PO6_MILLIS * 250);
+
+        if (e::atomic::increment_32_nobarrier(&s_interrupts, 0) > 0)
+        {
+            break;
+        }
+
+        for (lock_replicator_map_t::iterator it(&m_repl_lk); it.valid(); ++it)
+        {
+            lock_replicator* lr = *it;
+            lr->externally_work_state_machine(this);
+        }
+
+        for (read_replicator_map_t::iterator it(&m_repl_rd); it.valid(); ++it)
+        {
+            read_replicator* rr = *it;
+            rr->externally_work_state_machine(this);
+        }
+
+        for (write_replicator_map_t::iterator it(&m_repl_wr); it.valid(); ++it)
+        {
+            write_replicator* wr = *it;
+            wr->externally_work_state_machine(this);
+        }
+
+        for (migrator_map_t::iterator it(&m_migrations); it.valid(); ++it)
+        {
+            migrator* m = *it;
+            m->externally_work_state_machine(this);
+        }
+    }
+
+    LOG(INFO) << "pumping thread shutting down";
+}
