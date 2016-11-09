@@ -155,6 +155,7 @@ daemon :: coordinator_callback :: new_config(const char* data, size_t data_sz)
     LOG(INFO) << "updating to configuration " << d->get_config()->version();
     std::vector<paxos_group_id> gs = d->get_config()->groups_for(d->m_us.id);
 
+#if 0
     if (s_debug_mode)
     {
         std::string debug = d->get_config()->dump();
@@ -175,6 +176,7 @@ daemon :: coordinator_callback :: new_config(const char* data, size_t data_sz)
 
         LOG(INFO) << "===  end debug dump of configuration  ===";
     }
+#endif
 
     return true;
 }
