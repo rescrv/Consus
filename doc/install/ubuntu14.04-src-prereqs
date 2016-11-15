@@ -1,0 +1,2 @@
+$ apt-get update
+$ apt-get install -y build-essential pkg-config libpopt-dev libgoogle-glog-dev libsparsehash-dev libleveldb-dev python-dev
