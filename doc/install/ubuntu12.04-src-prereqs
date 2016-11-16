@@ -3,7 +3,7 @@ $ apt-get install -y build-essential pkg-config libpopt-dev libsparsehash-dev li
 $ cat >> glog-0.3.4.tar.gz.sha256 << EOF
 > ce99d58dce74458f7656a68935d7a0c048fa7b4626566a71b7f4e545920ceb10  glog-0.3.4.tar.gz
 > EOF
-$ wget --no-check-certificate https://github.com/google/glog/archive/v0.3.4.tar.gz -o glog-0.3.4.tar.gz
+$ wget --no-check-certificate https://github.com/google/glog/archive/v0.3.4.tar.gz -O glog-0.3.4.tar.gz
 $ sha256sum -c glog-0.3.4.tar.gz.sha256
 $ tar xvf glog-0.3.4.tar.gz
 $ cd glog-0.3.4
