@@ -6,7 +6,7 @@ $ cat >> checksums << EOF
 > 7d7a14ae825e66aabeb156c1c3fae9f9a76d640ef6b40ede74cc73da937e5202  leveldb-1.19.tar.gz
 > EOF
 $ wget --no-check-certificate https://github.com/google/glog/archive/v0.3.4.tar.gz -O glog-0.3.4.tar.gz
-$ wget https://github.com/google/leveldb/archive/v1.19.tar.gz -O leveldb-1.19.tar.gz
+$ wget --no-check-certificate https://github.com/google/leveldb/archive/v1.19.tar.gz -O leveldb-1.19.tar.gz
 $ sha256sum -c checksums
 $ tar xvf glog-0.3.4.tar.gz
 $ cd /tmp/glog-0.3.4
