@@ -150,6 +150,7 @@ consus_transaction_manager_LDADD += $(E_LIBS)
 consus_transaction_manager_LDADD += $(PO6_LIBS)
 consus_transaction_manager_LDADD += $(GLOG_LIBS)
 consus_transaction_manager_LDADD += $(POPT_LIBS)
+consus_transaction_manager_LDADD += -lpthread
 
 EXTRA_DIST += man/consus-transaction-manager.1.md
 EXTRA_DIST += man/consus-transaction-manager.1.h2m
@@ -207,12 +208,13 @@ consus_key_value_store_SOURCES += kvs/table_key_pair.cc
 consus_key_value_store_SOURCES += kvs/write_replicator.cc
 consus_key_value_store_SOURCES += tools/connect_opts.cc
 consus_key_value_store_LDADD =
-consus_key_value_store_LDADD += -lleveldb
 consus_key_value_store_LDADD += $(REPLICANT_LIBS)
 consus_key_value_store_LDADD += $(BUSYBEE_LIBS)
 consus_key_value_store_LDADD += $(PO6_LIBS)
+consus_key_value_store_LDADD += -lleveldb
 consus_key_value_store_LDADD += $(GLOG_LIBS)
 consus_key_value_store_LDADD += $(POPT_LIBS)
+consus_key_value_store_LDADD += -lpthread
 
 EXTRA_DIST += man/consus-key-value-store.1.md
 EXTRA_DIST += man/consus-key-value-store.1.h2m
@@ -330,6 +332,7 @@ libconsus_la_LIBADD += $(BUSYBEE_LIBS)
 libconsus_la_LIBADD += $(TREADSTONE_LIBS)
 libconsus_la_LIBADD += $(E_LIBS)
 libconsus_la_LIBADD += $(PO6_LIBS)
+libconsus_la_LIBADD += -lpthread
 
 ################################################################################
 ################################### Bindings ###################################
