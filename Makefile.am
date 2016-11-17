@@ -579,7 +579,7 @@ man/consus.1: man/consus.1.h2m consus.cc | consus$(EXEEXT)
 EXTRA_DIST += man/consus-create-data-center.1.md
 EXTRA_DIST += man/consus-create-data-center.1.h2m
 consus_create_data_center_SOURCES = tools/create-data-center.cc tools/common.cc tools/connect_opts.cc
-consus_create_data_center_LDADD = libconsus.la $(REPLICANT_LIBS) $(BUSYBEE_LIBS) $(TREADSTONE_LIBS) $(E_LIBS) $(PO6_LIBS) -lpthread
+consus_create_data_center_LDADD = libconsus.la $(REPLICANT_LIBS) $(BUSYBEE_LIBS) $(TREADSTONE_LIBS) $(E_LIBS) $(PO6_LIBS) $(POPT_LIBS) -lpthread
 man/consus-create-data-center.1: man/consus-create-data-center.1.h2m tools/create-data-center.cc | consus-create-data-center$(EXEEXT)
 	$(help2man_verbose)help2man $(HELP2MAN_FLAGS) --section 1 --output $@ --include $< ${abs_top_builddir}/consus-create-data-center$(EXEEXT)
 
@@ -587,7 +587,7 @@ man/consus-create-data-center.1: man/consus-create-data-center.1.h2m tools/creat
 EXTRA_DIST += man/consus-set-default-data-center.1.md
 EXTRA_DIST += man/consus-set-default-data-center.1.h2m
 consus_set_default_data_center_SOURCES = tools/set-default-data-center.cc tools/common.cc tools/connect_opts.cc
-consus_set_default_data_center_LDADD = libconsus.la $(REPLICANT_LIBS) $(BUSYBEE_LIBS) $(TREADSTONE_LIBS) $(E_LIBS) $(PO6_LIBS) -lpthread
+consus_set_default_data_center_LDADD = libconsus.la $(REPLICANT_LIBS) $(BUSYBEE_LIBS) $(TREADSTONE_LIBS) $(E_LIBS) $(PO6_LIBS) $(POPT_LIBS) -lpthread
 man/consus-set-default-data-center.1: man/consus-set-default-data-center.1.h2m tools/set-default-data-center.cc | consus-set-default-data-center$(EXEEXT)
 	$(help2man_verbose)help2man $(HELP2MAN_FLAGS) --section 1 --output $@ --include $< ${abs_top_builddir}/consus-set-default-data-center$(EXEEXT)
 
@@ -595,7 +595,7 @@ man/consus-set-default-data-center.1: man/consus-set-default-data-center.1.h2m t
 EXTRA_DIST += man/consus-availability-check.1.md
 EXTRA_DIST += man/consus-availability-check.1.h2m
 consus_availability_check_SOURCES = tools/availability-check.cc tools/common.cc tools/connect_opts.cc
-consus_availability_check_LDADD = libconsus.la $(REPLICANT_LIBS) $(BUSYBEE_LIBS) $(TREADSTONE_LIBS) $(E_LIBS) $(PO6_LIBS) -lpthread
+consus_availability_check_LDADD = libconsus.la $(REPLICANT_LIBS) $(BUSYBEE_LIBS) $(TREADSTONE_LIBS) $(E_LIBS) $(PO6_LIBS) $(POPT_LIBS) -lpthread
 man/consus-availability-check.1: man/consus-availability-check.1.h2m tools/availability-check.cc | consus-availability-check$(EXEEXT)
 	$(help2man_verbose)help2man $(HELP2MAN_FLAGS) --section 1 --output $@ --include $< ${abs_top_builddir}/consus-availability-check$(EXEEXT)
 
@@ -613,7 +613,7 @@ man/consus-debug.1: man/consus-debug.1.h2m consus-debug.cc | consus-debug$(EXEEX
 EXTRA_DIST += man/consus-debug-client-configuration.1.md
 EXTRA_DIST += man/consus-debug-client-configuration.1.h2m
 consus_debug_client_configuration_SOURCES = tools/debug-client-configuration.cc tools/common.cc tools/connect_opts.cc
-consus_debug_client_configuration_LDADD = libconsus.la $(REPLICANT_LIBS) $(BUSYBEE_LIBS) $(TREADSTONE_LIBS) $(E_LIBS) $(PO6_LIBS) -lpthread
+consus_debug_client_configuration_LDADD = libconsus.la $(REPLICANT_LIBS) $(BUSYBEE_LIBS) $(TREADSTONE_LIBS) $(E_LIBS) $(PO6_LIBS) $(POPT_LIBS) -lpthread
 man/consus-debug-client-configuration.1: man/consus-debug-client-configuration.1.h2m tools/debug-client-configuration.cc | consus-debug-client-configuration$(EXEEXT)
 	$(help2man_verbose)help2man $(HELP2MAN_FLAGS) --section 1 --output $@ --include $< ${abs_top_builddir}/consus-debug-client-configuration$(EXEEXT)
 
@@ -621,7 +621,7 @@ man/consus-debug-client-configuration.1: man/consus-debug-client-configuration.1
 EXTRA_DIST += man/consus-debug-txman-configuration.1.md
 EXTRA_DIST += man/consus-debug-txman-configuration.1.h2m
 consus_debug_txman_configuration_SOURCES = tools/debug-txman-configuration.cc tools/common.cc tools/connect_opts.cc
-consus_debug_txman_configuration_LDADD = libconsus.la $(REPLICANT_LIBS) $(BUSYBEE_LIBS) $(TREADSTONE_LIBS) $(E_LIBS) $(PO6_LIBS) -lpthread
+consus_debug_txman_configuration_LDADD = libconsus.la $(REPLICANT_LIBS) $(BUSYBEE_LIBS) $(TREADSTONE_LIBS) $(E_LIBS) $(PO6_LIBS) $(POPT_LIBS) -lpthread
 man/consus-debug-txman-configuration.1: man/consus-debug-txman-configuration.1.h2m tools/debug-txman-configuration.cc | consus-debug-txman-configuration$(EXEEXT)
 	$(help2man_verbose)help2man $(HELP2MAN_FLAGS) --section 1 --output $@ --include $< ${abs_top_builddir}/consus-debug-txman-configuration$(EXEEXT)
 
@@ -629,7 +629,7 @@ man/consus-debug-txman-configuration.1: man/consus-debug-txman-configuration.1.h
 EXTRA_DIST += man/consus-debug-kvs-configuration.1.md
 EXTRA_DIST += man/consus-debug-kvs-configuration.1.h2m
 consus_debug_kvs_configuration_SOURCES = tools/debug-kvs-configuration.cc tools/common.cc tools/connect_opts.cc
-consus_debug_kvs_configuration_LDADD = libconsus.la $(REPLICANT_LIBS) $(BUSYBEE_LIBS) $(TREADSTONE_LIBS) $(E_LIBS) $(PO6_LIBS) -lpthread
+consus_debug_kvs_configuration_LDADD = libconsus.la $(REPLICANT_LIBS) $(BUSYBEE_LIBS) $(TREADSTONE_LIBS) $(E_LIBS) $(PO6_LIBS) $(POPT_LIBS) -lpthread
 man/consus-debug-kvs-configuration.1: man/consus-debug-kvs-configuration.1.h2m tools/debug-kvs-configuration.cc | consus-debug-kvs-configuration$(EXEEXT)
 	$(help2man_verbose)help2man $(HELP2MAN_FLAGS) --section 1 --output $@ --include $< ${abs_top_builddir}/consus-debug-kvs-configuration$(EXEEXT)
 
