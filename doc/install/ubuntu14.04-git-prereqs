@@ -1,0 +1,2 @@
+$ apt-get update
+$ apt-get install -y build-essential pkg-config autoconf autoconf-archive automake libtool cython pandoc help2man valgrind libpopt-dev libgoogle-glog-dev libsparsehash-dev libleveldb-dev python-dev

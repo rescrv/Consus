@@ -1,0 +1,10 @@
+$ export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+$ for x in po6 e busybee replicant treadstone consus
+> do
+>     pushd $x
+>     autoreconf -ivf
+>     ./configure
+>     make
+>     make install
+>     popd
+> done
