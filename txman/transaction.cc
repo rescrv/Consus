@@ -1246,57 +1246,6 @@ transaction :: work_state_machine_local_commit_vote(daemon* d)
 void
 transaction :: work_state_machine_global_commit_vote(daemon* d)
 {
-    std::string commit_record;
-    e::packer pa(&commit_record);
-
-    for (size_t i = 0; i < m_ops.size(); ++i)
-    {
-        if (m_ops[i].type == LOG_ENTRY_NOP)
-        {
-            continue;
-        }
-
-        std::string log_entry = generate_log_entry(i);
-        pa = pa << e::slice(log_entry);
-    }
-
-    const configuration* c = d->get_config();
-    const uint64_t now = po6::monotonic_time();
-
-    for (unsigned i = 0; i < m_dcs_sz; ++i)
-    {
-        if (m_dcs[i] != m_group.id)
-        {
-            const paxos_group* g = c->get_group(m_dcs[i]);
-
-            if (!g)
-            {
-                // XXX what to do here?
-                ::abort();
-            }
-
-            for (unsigned j = 0; j < g->members_sz; ++j)
-            {
-                // XXX coordinator failure sensitive
-                if (c->get_state(g->members[j]) == txman_state::ONLINE &&
-                    m_dcs_timestamps[i] + d->resend_interval() < now)
-                {
-                    transaction_group tg(g->id, m_tg.txid);
-                    const size_t sz = BUSYBEE_HEADER_SIZE
-                                    + pack_size(COMMIT_RECORD)
-                                    + pack_size(tg)
-                                    + pack_size(e::slice(commit_record));
-                    std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
-                    msg->pack_at(BUSYBEE_HEADER_SIZE)
-                        << COMMIT_RECORD << tg << e::slice(commit_record);
-                    d->send(g->members[j], msg);
-                    m_dcs_timestamps[i] = now;
-                    break;
-                }
-            }
-        }
-    }
-
     daemon::global_voter_map_t::state_reference gvsr;
     global_voter* gv = d->m_global_voters.get_or_create_state(m_tg, &gvsr);
 
@@ -1310,6 +1259,67 @@ transaction :: work_state_machine_global_commit_vote(daemon* d)
     }
 
     gv->externally_work_state_machine(d);
+    paxos_group_id undecided[CONSUS_MAX_REPLICATION_FACTOR];
+    size_t undecided_sz = 0;
+    gv->unvoted_data_centers(undecided, &undecided_sz);
+
+    if (undecided_sz > 0)
+    {
+        std::string commit_record;
+        e::packer pa(&commit_record);
+
+        for (size_t i = 0; i < m_ops.size(); ++i)
+        {
+            if (m_ops[i].type == LOG_ENTRY_NOP)
+            {
+                continue;
+            }
+
+            std::string log_entry = generate_log_entry(i);
+            pa = pa << e::slice(log_entry);
+        }
+
+        const configuration* c = d->get_config();
+        const uint64_t now = po6::monotonic_time();
+
+        for (unsigned i = 0; i < undecided_sz; ++i)
+        {
+            if (undecided[i] == m_group.id)
+            {
+                continue;
+            }
+
+            const paxos_group* g = c->get_group(undecided[i]);
+            size_t idx = std::find(m_dcs, m_dcs + m_dcs_sz, undecided[i]) - m_dcs;
+
+            if (!g || idx >= CONSUS_MAX_REPLICATION_FACTOR)
+            {
+                // XXX what to do here?
+                ::abort();
+            }
+
+            for (unsigned j = 0; j < g->members_sz; ++j)
+            {
+                // XXX coordinator failure sensitive
+                if (c->get_state(g->members[j]) == txman_state::ONLINE &&
+                    m_dcs_timestamps[idx] + d->resend_interval() < now)
+                {
+                    transaction_group tg(g->id, m_tg.txid);
+                    const size_t sz = BUSYBEE_HEADER_SIZE
+                                    + pack_size(COMMIT_RECORD)
+                                    + pack_size(tg)
+                                    + pack_size(e::slice(commit_record));
+                    std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
+                    msg->pack_at(BUSYBEE_HEADER_SIZE)
+                        << COMMIT_RECORD << tg << e::slice(commit_record);
+                    d->send(g->members[j], msg);
+                    m_dcs_timestamps[idx] = now;
+                    break;
+                }
+            }
+        }
+    }
+
     uint64_t outcome;
 
     if (!gv->outcome(&outcome))

@@ -101,6 +101,7 @@ global_voter :: global_voter(const transaction_group& tg)
     , m_data_center_cmp(new data_center_comparator(m_global_cmp.get()))
     , m_data_center_gp()
     , m_highest_log_entry(0)
+    , m_dc_prev_learned()
     , m_rate_vote_timestamp(0)
     , m_outer_rate_m1a()
     , m_outer_rate_m1a_timestamp(0)
@@ -217,7 +218,10 @@ global_voter :: propose(const generalized_paxos::command& c, daemon* d)
 
     if (proposed && s_debug_mode)
     {
-        LOG(INFO) << logid() << "received proposal: " << pretty_print_outer(c);
+        LOG_IF(INFO, s_debug_mode)
+            << logid()
+            << "proposing state machine transition "
+            << pretty_print_outer(c);
     }
 
     if (proposed)
@@ -253,18 +257,23 @@ global_voter :: process_p1a(comm_id id, const generalized_paxos::message_p1a& m,
 
     if (m.b > m_data_center_gp.acceptor_ballot())
     {
+        // separated out so we log just once
+        //
+        // send will always be true when m.b >= m_data_center_gp.acceptor_ballot(),
+        // leading to a log entry on each and every rexmit of p1a if this were
+        // folded into the if(send) down below.
         std::string entry;
         e::packer(&entry)
             << LOG_ENTRY_GLOBAL_VOTE_1A << m_tg << m;
         int64_t x = d->m_log.append(entry.data(), entry.size());
         m_highest_log_entry = std::max(m_highest_log_entry, x);
+        LOG_IF(INFO, s_debug_mode) << logid() << "following " << ph(m.b);
     }
 
     m_data_center_gp.process_p1a(m, &send, &r);
 
     if (send)
     {
-        LOG_IF(INFO, s_debug_mode) << logid() << "following " << ph(m.b);
         const size_t sz = BUSYBEE_HEADER_SIZE
                         + pack_size(GV_VOTE_1B)
                         + pack_size(m_tg)
@@ -272,10 +281,6 @@ global_voter :: process_p1a(comm_id id, const generalized_paxos::message_p1a& m,
         std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
         msg->pack_at(BUSYBEE_HEADER_SIZE) << GV_VOTE_1B << m_tg << r;
         d->send_when_durable(m_highest_log_entry, id, msg);
-    }
-    else
-    {
-        LOG_IF(INFO, s_debug_mode) << logid() << "not following " << ph(m.b);
     }
 
     work_state_machine(d);
@@ -331,13 +336,16 @@ global_voter :: process_p2a(comm_id id, const generalized_paxos::message_p2a& m,
             << LOG_ENTRY_GLOBAL_VOTE_2A << m_tg << m;
         int64_t x = d->m_log.append(entry.data(), entry.size());
         m_highest_log_entry = std::max(m_highest_log_entry, x);
+        LOG_IF(INFO, s_debug_mode)
+            << logid() << ph(m.b)
+            << " suggests state machine input "
+            << pretty_print_outer(m.v);
     }
 
     if (send &&
         (m_outer_rate_m2b != r ||
          m_outer_rate_m2b_timestamp + d->resend_interval() < now))
     {
-        LOG_IF(INFO, s_debug_mode) << logid() << "accepting " << pretty_print_outer(m.v) << " from " << ph(m.b);
         const size_t sz = BUSYBEE_HEADER_SIZE
                         + pack_size(GV_VOTE_2B)
                         + pack_size(m_tg)
@@ -347,10 +355,6 @@ global_voter :: process_p2a(comm_id id, const generalized_paxos::message_p2a& m,
         d->send_when_durable(m_highest_log_entry, m_tg.group, msg);
         m_outer_rate_m2b = r;
         m_outer_rate_m2b_timestamp = now;
-    }
-    else if (!send)
-    {
-        LOG_IF(INFO, s_debug_mode) << logid() << "dropped proposal from " << ph(m.b);
     }
 
     work_state_machine(d);
@@ -376,7 +380,10 @@ global_voter :: process_p2b(const generalized_paxos::message_p2b& m, daemon* d)
             << LOG_ENTRY_GLOBAL_VOTE_2B << m_tg << m;
         int64_t x = d->m_log.append(entry.data(), entry.size());
         m_highest_log_entry = std::max(m_highest_log_entry, x);
-        LOG_IF(INFO, s_debug_mode) << logid() << pretty_print_outer(m.v) << " accepted by " << comm_id(m.acceptor.get());
+        LOG_IF(INFO, s_debug_mode)
+            << logid() << comm_id(m.acceptor.get())
+            << " accepted state machine input "
+            << pretty_print_outer(m.v);
         work_state_machine(d);
     }
 
@@ -396,6 +403,54 @@ global_voter :: outcome(uint64_t* v)
     po6::threads::mutex::hold hold(&m_mtx);
     *v = m_outcome;
     return m_has_outcome;
+}
+
+void
+global_voter :: unvoted_data_centers(paxos_group_id* dcs, size_t* dcs_sz)
+{
+    *dcs_sz = m_dcs_sz;
+
+    for (size_t i = 0; i < m_dcs_sz; ++i)
+    {
+        dcs[i] = m_dcs[i];
+    }
+
+    generalized_paxos::cstruct val = m_data_center_gp.accepted_value();
+
+    for (std::vector<generalized_paxos::command>::iterator it = val.commands.begin();
+            it != val.commands.end(); ++it)
+    {
+        const generalized_paxos::command& c(*it);
+        generalized_paxos::command inner_c;
+
+        if (static_cast<transition_t>(c.type) != GLOBAL_VOTER_COMMAND)
+        {
+            continue;
+        }
+
+        e::unpacker up(c.value);
+        up = up >> inner_c;
+
+        if (up.error())
+        {
+            continue;
+        }
+
+        dcs[inner_c.type % CONSUS_MAX_REPLICATION_FACTOR] = paxos_group_id();
+    }
+
+    for (size_t i = 0; i < *dcs_sz; )
+    {
+        if (dcs[i] == paxos_group_id())
+        {
+            std::swap(dcs[i], dcs[*dcs_sz - 1]);
+            --*dcs_sz;
+        }
+        else
+        {
+            ++i;
+        }
+    }
 }
 
 std::string
@@ -624,7 +679,8 @@ global_voter :: work_state_machine(daemon* d)
         (m_outer_rate_m1a != m1 ||
          m_outer_rate_m1a_timestamp + d->resend_interval() < now))
     {
-        LOG_IF(INFO, s_debug_mode) << logid() << d->m_us.id << " leading " << ph(m1.b);
+        LOG_IF(INFO, s_debug_mode && m_outer_rate_m1a != m1)
+            << logid () << "leading " << ph(m1.b);
         const size_t sz = BUSYBEE_HEADER_SIZE
                         + pack_size(GV_VOTE_1A)
                         + pack_size(m_tg)
@@ -640,7 +696,10 @@ global_voter :: work_state_machine(daemon* d)
         (m_outer_rate_m2a != m2 ||
          m_outer_rate_m2a_timestamp + d->resend_interval() < now))
     {
-        LOG_IF(INFO, s_debug_mode) << logid() << d->m_us.id << " proposing " << pretty_print_outer(m2.v);
+        LOG_IF(INFO, s_debug_mode && m_outer_rate_m2a != m2)
+            << logid() << "using " << ph(m2.b)
+            << " to suggest state machine input "
+            << pretty_print_outer(m2.v);
         const size_t sz = BUSYBEE_HEADER_SIZE
                         + pack_size(GV_VOTE_2A)
                         + pack_size(m_tg)
@@ -656,7 +715,10 @@ global_voter :: work_state_machine(daemon* d)
         (m_outer_rate_m2b != m3 ||
          m_outer_rate_m2b_timestamp + d->resend_interval() < now))
     {
-        LOG_IF(INFO, s_debug_mode) << logid() << d->m_us.id << " accepted " << pretty_print_outer(m3.v);
+        LOG_IF(INFO, s_debug_mode && m_outer_rate_m2b != m3)
+            << logid() << comm_id(m3.acceptor.get())
+            << "/this-node accepted state machine input "
+            << pretty_print_outer(m3.v);
         const size_t sz = BUSYBEE_HEADER_SIZE
                         + pack_size(GV_VOTE_2B)
                         + pack_size(m_tg)
@@ -687,7 +749,14 @@ global_voter :: work_state_machine(daemon* d)
     }
 
     generalized_paxos::cstruct dc_learned = m_data_center_gp.learned();
-    LOG_IF(INFO, s_debug_mode) << logid() << "learned command history " << pretty_print_outer(dc_learned);
+
+    if (s_debug_mode && dc_learned != m_dc_prev_learned)
+    {
+        LOG(INFO) << logid() << "learned state machine input "
+                  << pretty_print_outer(dc_learned);
+        m_dc_prev_learned = dc_learned;
+    }
+
     size_t executed = 0;
 
     for (size_t i = 0; i < dc_learned.commands.size(); ++i)
@@ -815,7 +884,7 @@ global_voter :: work_state_machine(daemon* d)
         send_global(m2, d);
     }
 
-    if (send_m3 && tally_votes("phase2b", m3.v) != 0)
+    if (send_m3 && tally_votes("acceptor", m3.v) != 0)
     {
         send_global(m3, d);
     }
@@ -823,7 +892,7 @@ global_voter :: work_state_machine(daemon* d)
     if (!m_has_outcome)
     {
         generalized_paxos::cstruct votes = m_global_gp.learned();
-        LOG_IF(INFO, s_debug_mode) << logid() << "learned votes " << pretty_print_inner(votes);
+        LOG_IF(INFO, s_debug_mode) << XXX() << "learned votes " << pretty_print_inner(votes);
         uint64_t outcome = tally_votes("learned", votes);
 
         if (outcome != 0)
@@ -848,7 +917,7 @@ global_voter :: send_global(const generalized_paxos::message_p1a& m, daemon* d)
 
         if (propose_global(c, d))
         {
-            LOG_IF(INFO, s_debug_mode) << logid() << m_tg.group << " leading " << ph(m.b);
+            LOG_IF(INFO, s_debug_mode) << XXX() << m_tg.group << " leading " << ph(m.b);
             m_inner_rate_m1a = m;
             m_inner_rate_m1a_timestamp = now;
         }
@@ -869,7 +938,7 @@ global_voter :: send_global(const generalized_paxos::message_p1b& m, daemon* d)
 
         if (propose_global(c, d))
         {
-            LOG_IF(INFO, s_debug_mode) << logid() << m_tg.group << " following " << ph(m.b);
+            LOG_IF(INFO, s_debug_mode) << XXX() << m_tg.group << " following " << ph(m.b);
             m_inner_rate_m1b = m;
             m_inner_rate_m1b_timestamp = now;
         }
@@ -890,7 +959,7 @@ global_voter :: send_global(const generalized_paxos::message_p2a& m, daemon* d)
 
         if (propose_global(c, d))
         {
-            LOG_IF(INFO, s_debug_mode) << logid() << m_tg.group << " proposing " << pretty_print_inner(m.v);
+            LOG_IF(INFO, s_debug_mode) << XXX() << m_tg.group << " proposing " << pretty_print_inner(m.v);
             m_inner_rate_m2a = m;
             m_inner_rate_m2a_timestamp = now;
         }
@@ -911,7 +980,7 @@ global_voter :: send_global(const generalized_paxos::message_p2b& m, daemon* d)
 
         if (propose_global(c, d))
         {
-            LOG_IF(INFO, s_debug_mode) << logid() << m_tg.group << " accepted " << pretty_print_inner(m.v);
+            LOG_IF(INFO, s_debug_mode) << XXX() << m_tg.group << " accepted " << pretty_print_inner(m.v);
             m_inner_rate_m2b = m;
             m_inner_rate_m2b_timestamp = now;
         }
@@ -964,12 +1033,12 @@ global_voter :: tally_votes(const char* prefix, const generalized_paxos::cstruct
 
         if (c.type >= 2 * CONSUS_MAX_REPLICATION_FACTOR)
         {
-            LOG(ERROR) << logid() << prefix << " invalid command: " << c;
+            LOG(ERROR) << XXX() << prefix << " invalid command: " << c;
         }
         else if (c.type >= CONSUS_MAX_REPLICATION_FACTOR)
         {
             // XXX re-cast vote
-            LOG(ERROR) << logid() << prefix << " XXX RE-CAST VOTE";
+            LOG(ERROR) << XXX() << prefix << " XXX RE-CAST VOTE";
         }
         else
         {
@@ -981,7 +1050,7 @@ global_voter :: tally_votes(const char* prefix, const generalized_paxos::cstruct
 
                 if (up.error())
                 {
-                    LOG(ERROR) << logid() << prefix << " corrupt vote: " << c;
+                    LOG(ERROR) << XXX() << prefix << " corrupt vote: " << c;
                 }
                 else if (v == CONSUS_VOTE_COMMIT)
                 {
@@ -997,15 +1066,15 @@ global_voter :: tally_votes(const char* prefix, const generalized_paxos::cstruct
                 }
                 else
                 {
-                    LOG(ERROR) << logid() << prefix << " invalid vote: " << c;
+                    LOG(ERROR) << XXX() << prefix << " invalid vote: " << c;
                 }
             }
         }
     }
 
-    LOG_IF(INFO, s_debug_mode && voted) << logid() << prefix << " " << committed << "/" << voted << " vote commit";
-    LOG_IF(INFO, s_debug_mode && voted) << logid() << prefix << " " << aborted << "/" << voted << " vote abort";
-    LOG_IF(INFO, s_debug_mode && voted) << logid() << prefix << " " << (m_dcs_sz / 2 + 1) << " is a quorum of voters";
+    LOG_IF(INFO, s_debug_mode && voted) << XXX() << prefix << " " << committed << "/" << voted << " vote commit";
+    LOG_IF(INFO, s_debug_mode && voted) << XXX() << prefix << " " << aborted << "/" << voted << " vote abort";
+    LOG_IF(INFO, s_debug_mode && voted) << XXX() << prefix << " " << (m_dcs_sz / 2 + 1) << " is a quorum of voters";
 
     if (committed >= m_dcs_sz / 2 + 1)
     {

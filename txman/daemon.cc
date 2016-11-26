@@ -1026,12 +1026,6 @@ daemon :: process_commit_record(comm_id, std::auto_ptr<e::buffer> msg, e::unpack
     e::slice commit_record;
     up = up >> tg >> commit_record;
     CHECK_UNPACK(COMMIT_RECORD, up);
-
-    if (s_debug_mode)
-    {
-        LOG(INFO) << tg << " commit record";
-    }
-
     transaction_map_t::state_reference tsr;
     transaction* xact = m_transactions.get_or_create_state(tg, &tsr);
     assert(xact);

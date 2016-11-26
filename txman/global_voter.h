@@ -45,11 +45,13 @@ class global_voter
         bool process_p2b(const generalized_paxos::message_p2b& m, daemon* d);
         void externally_work_state_machine(daemon* d);
         bool outcome(uint64_t* v);
+        void unvoted_data_centers(paxos_group_id* dcs, size_t* dcs_sz);
 
     private:
         struct data_center_comparator;
         struct global_comparator;
         std::string logid();
+        std::string XXX() { return logid() + " XXX: "; }
         std::string pretty_print_outer(const generalized_paxos::cstruct& c);
         std::string pretty_print_outer(const generalized_paxos::command& c);
         std::string pretty_print_inner(const generalized_paxos::cstruct& c);
@@ -75,6 +77,7 @@ class global_voter
         const std::auto_ptr<data_center_comparator> m_data_center_cmp;
         generalized_paxos m_data_center_gp;
         int64_t m_highest_log_entry;
+        generalized_paxos::cstruct m_dc_prev_learned;
         // data center paxos: rate limiting
         uint64_t m_rate_vote_timestamp;
         generalized_paxos::message_p1a m_outer_rate_m1a;

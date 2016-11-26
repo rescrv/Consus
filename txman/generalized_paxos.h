@@ -48,6 +48,7 @@ class generalized_paxos
             cstruct();
             ~cstruct() throw ();
             bool operator == (const cstruct& rhs) const;
+            bool operator != (const cstruct& rhs) const { return !(*this == rhs); }
 
             std::vector<command> commands;
         };
@@ -143,6 +144,7 @@ class generalized_paxos
 
         // react to messages
         ballot acceptor_ballot() const { return m_acceptor_ballot; }
+        cstruct accepted_value() const { return m_acceptor_value; }
         void process_p1a(const message_p1a& m, bool* send, message_p1b* r);
         bool process_p1b(const message_p1b& m);
         void process_p2a(const message_p2a& m, bool* send, message_p2b* r);

@@ -222,7 +222,7 @@ generalized_paxos :: process_p1b(const message_p1b& m)
         return false;
     }
     else if (m.b == m_leader_ballot &&
-             m_promises[idx].b <= m_leader_ballot &&
+             m_promises[idx].b < m_leader_ballot &&
              m_state >= LEADING_PHASE1)
     {
         m_promises[idx] = m;

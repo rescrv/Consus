@@ -22,3 +22,5 @@ List of major "TODO" items left:
 - every txman operation should check outcome in dispositions and react
   appropriately
 - configuration serial/de-serial
+- Don't log commit record repeatedly
+- Don't send commit record repeatedly
