@@ -99,15 +99,15 @@ may need to perform different or slightly altered steps for installing Consus.
 \subsubsection*{Preparing Ubuntu}
 
 On recent versions of Ubuntu, all Consus' dependencies can be installed directly
-from packages.  \cref{prereq:src:ubuntu14.04} shows the instructions starting with Ubuntu
-14.04 and continuing through 16.10.
+from packages.  \cref{code:prereq:src:ubuntu14.04} shows the instructions
+starting with Ubuntu 14.04 and continuing through 16.10.
 
 \codeFromFile{console}{\topdir/install/ubuntu14.04-src-prereqs}%
 {Prepare Installation on Ubuntu 14.04 and later}{prereq:src:ubuntu14.04}
 
 Installing on Ubuntu 12.04 requires a bit more work as the Google logging
 library is not packaged and the packaged LevelDB version is too old for Consus.
-\cref{prereq:src:ubuntu12.04} shows the complete steps for installing
+\cref{code:prereq:src:ubuntu12.04} shows the complete steps for installing
 prerequisite packages and for installing the other dependencies from source.
 
 \codeFromFile{console}{\topdir/install/ubuntu12.04-src-prereqs}%
