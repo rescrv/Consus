@@ -11,7 +11,8 @@ export CROSSTEX_FLAGS:= --add-in --add-proceedings --titlecase=title --cite-by i
 all: $(TARGET).pdf $(TARGET).ps
 	@echo "SUCCESS: dvi, ps, pdf all up-to-date"
 
-$(TARGET).dvi: $(TARGET).tex $(wildcard *.tex) $(wildcard */*.tex) $(wildcard */*/*.tex) latex.py Makefile
+$(TARGET).dvi: $(TARGET).tex $(wildcard *.tex) $(wildcard */*.tex) $(wildcard */*/*.tex) assert-same.py latex.py Makefile
+	python2 assert-same.py
 	python2 latex.py --crosstex --index $(TARGET)
 
 $(TARGET).ps: $(TARGET).dvi

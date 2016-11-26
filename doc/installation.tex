@@ -91,22 +91,33 @@ installation.  We will walk through the exact commands necessary to install
 Consus on some of the common Linux distributions.  Depending on your setup, you
 may need to perform different or slightly altered steps for installing Consus.
 
-\paragraph{Preparing CentOS}
-\lipsum[4]
+% XXX
+% \paragraph{Preparing Debian}
+% \paragraph{Preparing Fedora}
+% \paragraph{Preparing CentOS}
 
-\paragraph{Preparing Ubuntu}
-\lipsum[4]
+\subsubsection*{Preparing Ubuntu}
 
-\paragraph{Preparing Debian}
-\lipsum[4]
+On recent versions of Ubuntu, all Consus' dependencies can be installed directly
+from packages.  \cref{prereq:src:ubuntu14.04} shows the instructions starting with Ubuntu
+14.04 and continuing through 16.10.
 
-\paragraph{Preparing Fedora}
-\lipsum[4]
+\codeFromFile{console}{\topdir/install/ubuntu14.04-src-prereqs}%
+{Prepare Installation on Ubuntu 14.04 and later}{prereq:src:ubuntu14.04}
+
+Installing on Ubuntu 12.04 requires a bit more work as the Google logging
+library is not packaged and the packaged LevelDB version is too old for Consus.
+\cref{prereq:src:ubuntu12.04} shows the complete steps for installing
+prerequisite packages and for installing the other dependencies from source.
+
+\codeFromFile{console}{\topdir/install/ubuntu12.04-src-prereqs}%
+{Prepare Installation on Ubuntu 12.04}{prereq:src:ubuntu12.04}
 
 \subsection{Installing Consus Components}
 
-\lipsum[4]
+With the prerequisites to Consus installed, we can install the rest of Consus in
+a simple loop.  If we download all tarballs from the Consus Download Site % XXX
+we can then install them by repeating the configure-make-install process for
+each.
 
 \codeFromFile{console}{\topdir/install/source}{Install to \code{/usr/local}}{install:src}
-
-\lipsum[4]
