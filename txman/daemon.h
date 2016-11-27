@@ -120,7 +120,7 @@ class daemon
         void debug_dump();
         uint64_t generate_nonce();
         transaction_id generate_txid();
-        uint64_t resend_interval() { return PO6_SECONDS; }
+        uint64_t resend_interval() { return 5 * PO6_SECONDS; }
         bool send(comm_id id, std::auto_ptr<e::buffer> msg);
         unsigned send(paxos_group_id g, std::auto_ptr<e::buffer> msg);
         unsigned send(const paxos_group& g, std::auto_ptr<e::buffer> msg);

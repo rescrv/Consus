@@ -24,3 +24,5 @@ List of major "TODO" items left:
 - configuration serial/de-serial
 - Don't log commit record repeatedly
 - Don't send commit record repeatedly
+- change global voter retransmission (take durability into account so a message
+  isn't resent before it ever passes the durability barrier).
