@@ -645,6 +645,7 @@ EXTRA_DIST += $(wildcard doc/*/*/*/*.tex)
 EXTRA_DIST += $(wildcard doc/*/*/*/*/*.tex)
 EXTRA_DIST += $(wildcard doc/install/*)
 EXTRA_DIST += doc/Makefile
+EXTRA_DIST += doc/assert-same.py
 EXTRA_DIST += doc/latex.py
 
 ################################################################################
