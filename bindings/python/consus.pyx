@@ -21,8 +21,8 @@ cdef extern from "stdint.h":
 
 cdef extern from "stdlib.h":
 
-    void *malloc(size_t size);
-    void free(void *ptr);
+    void *malloc(size_t size)
+    void free(void *ptr)
 
 
 cdef extern from "consus.h":
@@ -47,34 +47,34 @@ cdef extern from "consus.h":
 
     cdef struct consus_client
     cdef struct consus_transaction
-    consus_client* consus_create(const char* coordinator, uint16_t port);
-    consus_client* consus_create_conn_str(const char* conn_str);
-    void consus_destroy(consus_client* client);
+    consus_client* consus_create(const char* coordinator, uint16_t port)
+    consus_client* consus_create_conn_str(const char* conn_str)
+    void consus_destroy(consus_client* client)
     int64_t consus_loop(consus_client* client, int timeout,
-                        consus_returncode* status);
+                        consus_returncode* status)
     int64_t consus_wait(consus_client* client, int64_t x, int timeout,
-                        consus_returncode* status);
-    int consus_poll_fd(consus_client* client);
-    int consus_block(consus_client* client, int timeout);
-    const char* consus_error_message(consus_client* client);
-    const char* consus_error_location(consus_client* client);
-    const char* consus_returncode_to_string(consus_returncode);
-    int64_t consus_begin_transaction(consus_client* client, consus_returncode* status, consus_transaction** xact);
-    int64_t consus_commit_transaction(consus_transaction* xact, consus_returncode* status);
-    int64_t consus_abort_transaction(consus_transaction* xact, consus_returncode* status);
-    int64_t consus_restart_transaction(consus_transaction* xact, consus_returncode* status);
-    void consus_destroy_transaction(consus_transaction* xact);
+                        consus_returncode* status)
+    int consus_poll_fd(consus_client* client)
+    int consus_block(consus_client* client, int timeout)
+    const char* consus_error_message(consus_client* client)
+    const char* consus_error_location(consus_client* client)
+    const char* consus_returncode_to_string(consus_returncode)
+    int64_t consus_begin_transaction(consus_client* client, consus_returncode* status, consus_transaction** xact)
+    int64_t consus_commit_transaction(consus_transaction* xact, consus_returncode* status)
+    int64_t consus_abort_transaction(consus_transaction* xact, consus_returncode* status)
+    int64_t consus_restart_transaction(consus_transaction* xact, consus_returncode* status)
+    void consus_destroy_transaction(consus_transaction* xact)
 
     int64_t consus_get(consus_transaction* xact,
                        const char* table,
                        const char* key, size_t key_sz,
                        consus_returncode* status,
-                       const char** value, size_t* value_sz);
+                       const char** value, size_t* value_sz)
     int64_t consus_put(consus_transaction* xact,
                        const char* table,
                        const char* key, size_t key_sz,
                        const char* value, size_t value_sz,
-                       consus_returncode* status);
+                       consus_returncode* status)
 
 cdef extern from "consus-unsafe.h":
 
@@ -82,20 +82,20 @@ cdef extern from "consus-unsafe.h":
                               const char* table,
                               const char* key, size_t key_sz,
                               consus_returncode* status,
-                              char** value, size_t* value_sz);
+                              char** value, size_t* value_sz)
     int64_t consus_unsafe_put(consus_client* client,
                               const char* table,
                               const char* key, size_t key_sz,
                               const char* value, size_t value_sz,
-                              consus_returncode* status);
+                              consus_returncode* status)
     int64_t consus_unsafe_lock(consus_client* client,
                                const char* table,
                                const char* key, size_t key_sz,
-                               consus_returncode* status);
+                               consus_returncode* status)
     int64_t consus_unsafe_unlock(consus_client* client,
                                  const char* table,
                                  const char* key, size_t key_sz,
-                                 consus_returncode* status);
+                                 consus_returncode* status)
 
 
 class ConsusException(Exception):
@@ -229,7 +229,7 @@ cdef class Client:
         cdef consus_returncode lstatus
         if req < 0:
             self.throw_exception(rstatus[0])
-        lid = consus_wait(self.client, req, -1, &lstatus);
+        lid = consus_wait(self.client, req, -1, &lstatus)
         if lid < 0:
             self.throw_exception(lstatus)
         assert req == lid
@@ -268,7 +268,7 @@ cdef class Transaction:
 
     def __dealloc__(self):
         if self.xact:
-            consus_destroy_transaction(self.xact);
+            consus_destroy_transaction(self.xact)
 
     def get(self, str table, key):
         cdef bytes tmp = table.encode('ascii')
