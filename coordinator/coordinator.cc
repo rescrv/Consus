@@ -299,9 +299,9 @@ coordinator :: txman_online(rsm_context* ctx, comm_id id, const po6::net::locati
     if (ts->state != txman_state::ONLINE)
     {
         rsm_log(ctx, "changing transaction manager %" PRIu64
-                     " from %s to %s\n",
+                     " from %s to %s (nonce: %" PRIu64 ")\n",
                      id.get(), txman_state::to_string(ts->state),
-                     txman_state::to_string(txman_state::ONLINE));
+                     txman_state::to_string(txman_state::ONLINE), nonce);
         ts->state = txman_state::ONLINE;
         ts->nonce = nonce;
         changed = true;
@@ -443,9 +443,9 @@ coordinator :: kvs_online(rsm_context* ctx, comm_id id, const po6::net::location
     if (kv->state != kvs_state::ONLINE)
     {
         rsm_log(ctx, "changing key value store %" PRIu64
-                     " from %s to %s\n",
+                     " from %s to %s (nonce: %" PRIu64 ")\n",
                      id.get(), kvs_state::to_string(kv->state),
-                     kvs_state::to_string(kvs_state::ONLINE));
+                     kvs_state::to_string(kvs_state::ONLINE), nonce);
         kv->state = kvs_state::ONLINE;
         kv->nonce = nonce;
         changed = true;
