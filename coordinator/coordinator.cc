@@ -267,7 +267,7 @@ coordinator :: txman_register(rsm_context* ctx, const txman& t, const std::strin
 
     ts = new_txman(t);
     ts->tx.dc = dcid;
-    rsm_log(ctx, "registered %s", to_string(t).c_str());
+    rsm_log(ctx, "registered %s", to_string(ts->tx).c_str());
     generate_next_configuration(ctx);
     return generate_response(ctx, COORD_SUCCESS);
 }
@@ -411,7 +411,7 @@ coordinator :: kvs_register(rsm_context* ctx, const kvs& k, const std::string& d
 
     kv = new_kvs(k);
     kv->kv.dc = dcid;
-    rsm_log(ctx, "registered %s", to_string(k).c_str());
+    rsm_log(ctx, "registered %s", to_string(kv->kv).c_str());
     generate_next_configuration(ctx);
     return generate_response(ctx, COORD_SUCCESS);
 }
