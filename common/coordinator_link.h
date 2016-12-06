@@ -83,6 +83,7 @@ class coordinator_link
         size_t m_config_data_sz;
         uint64_t m_last_config_state;
         bool m_last_config_valid;
+        uint64_t m_last_online_call;
         replicant_returncode m_faf_status;
         bool m_allow_rereg;
         bool m_error;

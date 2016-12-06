@@ -41,6 +41,7 @@ coordinator_link :: coordinator_link(const std::string& rendezvous,
     , m_config_data_sz(0)
     , m_last_config_state(0)
     , m_last_config_valid(false)
+    , m_last_online_call(0)
     , m_faf_status(REPLICANT_SUCCESS)
     , m_allow_rereg(false)
     , m_error(false)
@@ -202,7 +203,13 @@ coordinator_link :: maintain_connection()
     if (m_cb->has_id(m_id) &&
         (!m_cb->is_steady_state(m_id) || m_cb->address(m_id) != m_bind_to))
     {
-        online();
+        const uint64_t now = po6::monotonic_time();
+
+        if (m_last_online_call + PO6_SECONDS < now)
+        {
+            online();
+            m_last_online_call = now;
+        }
     }
 }
 
