@@ -154,6 +154,7 @@ coordinator_link :: maintain_connection()
     {
         online();
         m_online_once = true;
+        m_last_online_call = po6::monotonic_time();
     }
 
     replicant_returncode rc;
