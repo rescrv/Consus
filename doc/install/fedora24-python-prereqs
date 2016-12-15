@@ -1,1 +1,1 @@
-$ dnf install -y gcc pkgconfig python-devel
+$ dnf install -y python gcc redhat-rpm-config python-devel
