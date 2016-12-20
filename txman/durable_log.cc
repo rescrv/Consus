@@ -104,15 +104,8 @@ durable_log :: ~durable_log() throw ()
     close();
     m_flush.join();
 
-    if (m_segment_a)
-    {
-        delete m_segment_a;
-    }
-
-    if (m_segment_b)
-    {
-        delete m_segment_b;
-    }
+    delete m_segment_a
+    delete m_segment_b
 }
 
 bool
