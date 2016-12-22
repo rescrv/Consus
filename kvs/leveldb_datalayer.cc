@@ -150,8 +150,8 @@ leveldb_datalayer :: leveldb_datalayer()
 
 leveldb_datalayer :: ~leveldb_datalayer() throw ()
 {
-    delete m_bf
-    delete m_db
+    delete m_bf;
+    delete m_db;
 }
 
 bool
