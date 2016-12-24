@@ -5,6 +5,9 @@ SAME = [
         ('install/ubuntu14.04-src-prereqs',
             'install/ubuntu16.04-src-prereqs',
             'install/ubuntu16.10-src-prereqs'),
+        ('install/fedora23-src-prereqs',
+            'install/fedora24-src-prereqs',
+            'install/fedora25-src-prereqs'),
     ]
 
 def sha256(f):

@@ -1,0 +1,1 @@
+dnf install -y tar gcc-c++ make pkgconfig popt-devel glog-devel gflags-devel sparsehash-devel leveldb-devel python-devel
