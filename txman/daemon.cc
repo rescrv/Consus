@@ -73,8 +73,6 @@ using consus::daemon;
 // XXX each and every BUSYBEE_DISRUPTED event must trigger associated retries or
 // cleanups.  Most notably in the kvs_* functions
 
-// XXX each op should be periodically pumped
-
 #define CHECK_UNPACK(MSGTYPE, UNPACKER) \
     do \
     { \
