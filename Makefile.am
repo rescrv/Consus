@@ -681,6 +681,5 @@ EXTRA_DIST += maint/generate-unit-test-gremlins
 EXTRA_DIST += maint/valgrind-gremlins
 
 # run valgrind-gremlins after all other gremlin generators
-# XXX maint/valgrind-gremlins
 maintainer-generate:
 	maint/generate-unit-test-gremlins
