@@ -93,8 +93,16 @@ may need to perform different or slightly altered steps for installing Consus.
 
 % XXX
 % \paragraph{Preparing Debian}
-% \paragraph{Preparing Fedora}
 % \paragraph{Preparing CentOS}
+
+\subsubsection*{Preparing Fedora}
+
+On Fedora, all Consus' dependencies can be installed directly from packages.
+\cref{code:prereq:src:fedora25} shows the instructions for Fedora 23, 24, and
+25.
+
+\codeFromFile{console}{\topdir/install/fedora25-src-prereqs}%
+{Prepare Installation on Fedora 23 and later}{prereq:src:fedora25}
 
 \subsubsection*{Preparing Ubuntu}
 
@@ -113,7 +121,7 @@ prerequisite packages and for installing the other dependencies from source.
 \codeFromFile{console}{\topdir/install/ubuntu12.04-src-prereqs}%
 {Prepare Installation on Ubuntu 12.04}{prereq:src:ubuntu12.04}
 
-\subsection{Installing Consus Components}
+\subsection{Installing Consus}
 
 With the prerequisites to Consus installed, we can install the rest of Consus in
 a simple loop.  If we download all tarballs from the Consus Download Site % XXX
