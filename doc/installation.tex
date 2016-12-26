@@ -91,10 +91,6 @@ installation.  We will walk through the exact commands necessary to install
 Consus on some of the common Linux distributions.  Depending on your setup, you
 may need to perform different or slightly altered steps for installing Consus.
 
-% XXX
-% \paragraph{Preparing Debian}
-% \paragraph{Preparing CentOS}
-
 \subsubsection*{Preparing Fedora}
 
 On Fedora, all Consus' dependencies can be installed directly from packages.
@@ -129,3 +125,42 @@ we can then install them by repeating the configure-make-install process for
 each.
 
 \codeFromFile{console}{\topdir/install/source}{Install to \code{/usr/local}}{install:src}
+
+\section{Installing from Git Repositories}
+\label{sec:install:git}
+
+Developers wishing to work with Consus should install Consus from the latest Git
+repositories.  When installing from Git, all dependencies maintained by the
+Consus team should be installed from Git; installing some from source tarballs
+and some from Git may yield broken builds.
+
+The installation broadly divides into two distinct steps.  In the first step, we
+will walk through preparing your system with all the prerequisites necessary to
+build Consus from Git repositories.  This includes setting up a working C
+compiler, and installing dependencies not managed by the Consus team.  In the
+second step, we will walk through the steps to install the packages maintained
+by the Consus team that together comprise Consus.
+
+\subsection{Preparing for Installation}
+
+The individual preparation steps depend heavily upon the target of your Consus
+installation.  We will walk through the exact commands necessary to install
+Consus on some of the common Linux distributions.  Depending on your setup, you
+may need to perform different or slightly altered steps for installing Consus.
+
+\subsubsection*{Preparing Ubuntu}
+
+On recent versions of Ubuntu, all Consus' dependencies can be installed directly
+from packages.  \cref{code:prereq:git:ubuntu14.04} shows the instructions
+starting with Ubuntu 14.04 and continuing through 16.10.
+
+\codeFromFile{console}{\topdir/install/ubuntu14.04-git-prereqs}%
+{Prepare Installation on Ubuntu 14.04 and later}{prereq:git:ubuntu14.04}
+
+\subsection{Installing Consus}
+
+With the prerequisites to Consus installed, we can install the rest of Consus in
+a simple loop.  With the Git repositories to Consus cloned in a singular
+directory, we can install them all by repeating the install process in a loop.
+
+\codeFromFile{console}{\topdir/install/git}{Install to \code{/usr/local}}{install:git}
