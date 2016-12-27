@@ -360,7 +360,7 @@ lock_state :: ordered_enqueue(const request& r)
         ++it;
     }
 
-    while (it != m_reqs.end() && r.tg.txid.preempts(m_holder.txid))
+    while (it != m_reqs.end() && it->tg.txid.preempts(r.tg.txid))
     {
         ++it;
     }
