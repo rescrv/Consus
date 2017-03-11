@@ -37,13 +37,11 @@
 // consus
 #include "txman/generalized_paxos.h"
 
-#ifndef GENERALIZED_PAXOS_DEBUG
-#define GENERALIZED_PAXOS_DEBUG 1
-#endif
-
 #if GENERALIZED_PAXOS_DEBUG
+#define GP_ASSERT(X) do { assert((X)); } while (false)
 #define GP_ABORT() do { abort(); } while (false)
 #else
+#define GP_ASSERT(X) do { } while (false)
 #define GP_ABORT() do { } while (false)
 #endif
 
@@ -62,7 +60,7 @@ generalized_paxos :: generalized_paxos()
     , m_leader_ballot()
     , m_leader_value()
     , m_promises()
-    , m_learned()
+    , m_accepted()
     , m_learned_cached()
 {
 }
@@ -81,24 +79,28 @@ generalized_paxos :: init(const comparator* cmp, abstract_id us, const abstract_
     m_us = us;
     m_acceptors = std::vector<abstract_id>(acceptors, acceptors + acceptors_sz);
     m_promises.resize(acceptors_sz);
-    m_learned.resize(acceptors_sz);
+    m_accepted.resize(acceptors_sz);
 }
 
 bool
 generalized_paxos :: propose(const command& c)
 {
-    if (std::find(m_proposed.begin(), m_proposed.end(), c) == m_proposed.end())
+    assert(m_init);
+
+    if (std::find(m_proposed.begin(), m_proposed.end(), c) != m_proposed.end())
     {
-        m_proposed.push_back(c);
-        return true;
+        return false;
     }
 
-    return false;
+    m_proposed.push_back(c);
+    return true;
 }
 
 bool
 generalized_paxos :: propose_from_p2b(const message_p2b& m)
 {
+    assert(m_init);
+
     bool ret = false;
 
     for (size_t i = 0; i < m.v.commands.size(); ++i)
@@ -115,6 +117,8 @@ generalized_paxos :: advance(bool may_attempt_leadership,
                              bool* send_m2, message_p2a* m2,
                              bool* send_m3, message_p2b* m3)
 {
+    assert(m_init);
+
     *send_m1 = false;
     *send_m2 = false;
     *send_m3 = false;
@@ -163,6 +167,22 @@ generalized_paxos :: advance(bool may_attempt_leadership,
         {
             m_state = LEADING_PHASE2;
             m_leader_value = proven_safe();
+
+            for (size_t i = 0; i < m_promises.size(); ++i)
+            {
+                if (m_promises[i].b == m_leader_ballot && cstruct_compatible(m_leader_value, m_promises[i].v))
+                {
+                    m_leader_value = cstruct_lub(m_leader_value, m_promises[i].v);
+                }
+            }
+
+            for (size_t i = 0; i < m_promises.size(); ++i)
+            {
+                for (size_t c = 0; c < m_promises[i].v.commands.size(); ++c)
+                {
+                    propose(m_promises[i].v.commands[c]);
+                }
+            }
         }
     }
 
@@ -180,6 +200,7 @@ generalized_paxos :: advance(bool may_attempt_leadership,
 
         *send_m2 = true;
         *m2 = message_p2a(m_leader_ballot, m_leader_value);
+        // XXX p2a ourselves
     }
 
     if (m_acceptor_ballot.type == ballot::FAST)
@@ -216,7 +237,7 @@ generalized_paxos :: process_p1a(const message_p1a& m, bool* send, message_p1b* 
         return;
     }
 
-    if (m.b > m_leader_ballot)
+    if (m.b > m_leader_ballot && m_state > PARTICIPATING)
     {
         m_state = PARTICIPATING;
     }
@@ -240,14 +261,9 @@ generalized_paxos :: process_p1b(const message_p1b& m)
         return false;
     }
 
-    if (m.b > m_leader_ballot)
-    {
-        m_state = PARTICIPATING;
-        return false;
-    }
-    else if (m.b == m_leader_ballot &&
-             m_promises[idx].b < m_leader_ballot &&
-             m_state >= LEADING_PHASE1)
+    if (m.b == m_leader_ballot &&
+        m_promises[idx].b <= m_leader_ballot &&
+        m_state >= LEADING_PHASE1)
     {
         m_promises[idx] = m;
         return true;
@@ -263,20 +279,15 @@ generalized_paxos :: process_p2a(const message_p2a& m, bool* send, message_p2b* 
     assert(m_init);
     *send = false;
 
-    if (m.b != m_acceptor_ballot ||
-        m.b.type != ballot::CLASSIC)
+    if (m.b.type == ballot::CLASSIC &&
+        m.b == m_acceptor_ballot &&
+        (m_acceptor_value_src != m_acceptor_ballot ||
+         cstruct_le(m_acceptor_value, m.v)))
     {
-        return;
+        m_acceptor_value_src = m_acceptor_ballot;
+        m_acceptor_value = m.v;
     }
 
-    if (m_acceptor_value_src == m_acceptor_ballot &&
-        !cstruct_le(m_acceptor_value, m.v))
-    {
-        return;
-    }
-
-    m_acceptor_value_src = m_acceptor_ballot;
-    m_acceptor_value = m.v;
     *send = true;
     *r = message_p2b(m_acceptor_value_src, m_us, m_acceptor_value);
 }
@@ -295,16 +306,16 @@ generalized_paxos :: process_p2b(const message_p2b& m)
 
     bool changed = false;
 
-    if (m_learned[idx].b < m.b)
+    if (m_accepted[idx].b < m.b)
     {
-        m_learned[idx] = m;
+        m_accepted[idx] = m;
         changed = true;
     }
 
-    if (m_learned[idx].b == m.b &&
-        cstruct_lt(m_learned[idx].v, m.v))
+    if (m_accepted[idx].b == m.b &&
+        cstruct_lt(m_accepted[idx].v, m.v))
     {
-        m_learned[idx] = m;
+        m_accepted[idx] = m;
         changed = true;
     }
 
@@ -318,6 +329,30 @@ generalized_paxos :: learned()
     bool conflict;
     learned(&ret, &conflict);
     return ret;
+}
+
+void
+generalized_paxos :: all_accepted_commands(std::vector<command>* commands)
+{
+    commands->clear();
+
+    for (size_t i = 0; i < m_acceptor_value.commands.size(); ++i)
+    {
+        commands->push_back(m_acceptor_value.commands[i]);
+    }
+
+    for (size_t i = 0; i < m_accepted.size(); ++i)
+    {
+        for (size_t j = 0; j < m_accepted[i].v.commands.size(); ++j)
+        {
+            commands->push_back(m_accepted[i].v.commands[j]);
+        }
+    }
+
+    std::sort(commands->begin(), commands->end());
+    std::vector<command>::iterator it;
+    it = std::unique(commands->begin(), commands->end());
+    commands->resize(it - commands->begin());
 }
 
 size_t
@@ -347,9 +382,9 @@ generalized_paxos :: learned(cstruct* ret, bool* conflict)
     typedef std::map<ballot, uint64_t> ballot_map_t;
     ballot_map_t ballots;
 
-    for (size_t i = 0; i < m_learned.size(); ++i)
+    for (size_t i = 0; i < m_accepted.size(); ++i)
     {
-        ++ballots[m_learned[i].b];
+        ++ballots[m_accepted[i].b];
     }
 
     std::vector<cstruct> learned_values;
@@ -378,11 +413,6 @@ generalized_paxos :: learned(cstruct* ret, bool* conflict)
 
     *ret = cstruct();
 
-    if (learned_values.empty())
-    {
-        return;
-    }
-
     for (size_t i = 0; i < learned_values.size(); ++i)
     {
         *ret = cstruct_lub(*ret, learned_values[i]);
@@ -390,6 +420,8 @@ generalized_paxos :: learned(cstruct* ret, bool* conflict)
 
 #if GENERALIZED_PAXOS_DEBUG
     assert(cstruct_compatible(*ret, m_learned_cached));
+    *ret = cstruct_lub(*ret, m_learned_cached);
+    assert(cstruct_le(m_learned_cached, *ret));
     m_learned_cached = *ret;
 #endif
 }
@@ -399,11 +431,11 @@ generalized_paxos :: learned(const ballot& b, std::vector<cstruct>* lv, bool* co
 {
     std::vector<cstruct*> vs;
 
-    for (size_t i = 0; i < m_learned.size(); ++i)
+    for (size_t i = 0; i < m_accepted.size(); ++i)
     {
-        if (m_learned[i].b == b)
+        if (m_accepted[i].b == b)
         {
-            vs.push_back(&m_learned[i].v);
+            vs.push_back(&m_accepted[i].v);
         }
     }
 
@@ -470,10 +502,6 @@ generalized_paxos :: learned(cstruct** vs, size_t vs_sz,
     {
         *v = cstruct_glb(*v, *vs[i], conflict);
     }
-
-#if GENERALIZED_PAXOS_DEBUG
-    assert(cstruct_compatible(m_learned_cached, *v));
-#endif
 }
 
 generalized_paxos::cstruct
@@ -483,7 +511,7 @@ generalized_paxos :: proven_safe()
 
     for (size_t i = 0; i < m_promises.size(); ++i)
     {
-        if (m_promises[i].b == m_leader_ballot)
+        if (m_promises[i].b == m_leader_ballot && !m_promises[i].v.is_none())
         {
             k = std::max(k, m_promises[i].vb);
         }
@@ -493,35 +521,30 @@ generalized_paxos :: proven_safe()
     const uint64_t limit = 1ULL << m_promises.size();
     uint64_t v = (1ULL << quorum()) - 1ULL;
     assert(v < limit);
-    std::vector<cstruct> lv;
-    bool conflict = false;
+    std::vector<cstruct> gamma_R;
 
     while (v < limit)
     {
         std::vector<cstruct*> vs;
-        bool consider = true;
 
         for (size_t i = 0; i < m_promises.size(); ++i)
         {
             // if in R            && in Q
             if ((v & (1ULL << i)) && m_promises[i].b == m_leader_ballot)
             {
-                if (m_promises[i].vb == k)
+                if (m_promises[i].vb == k && !m_promises[i].v.is_none())
                 {
                     vs.push_back(&m_promises[i].v);
-                }
-                else
-                {
-                    consider = false;
                 }
             }
         }
 
-        if (consider)
+        if (!vs.empty())
         {
             cstruct tmp;
+            bool conflict = false;
             learned(&vs[0], vs.size(), &tmp, &conflict);
-            lv.push_back(tmp);
+            gamma_R.push_back(tmp);
         }
 
         // lexicographically next bit permutation
@@ -530,7 +553,7 @@ generalized_paxos :: proven_safe()
         v = t | ((((t & -t) / (v & -v)) >> 1) - 1);
     }
 
-    if (lv.empty())
+    if (gamma_R.empty())
     {
         for (size_t i = 0; i < m_promises.size(); ++i)
         {
@@ -543,9 +566,20 @@ generalized_paxos :: proven_safe()
 
     cstruct ret;
 
-    for (size_t i = 0; i < lv.size(); ++i)
+    for (size_t i = 0; i < gamma_R.size(); ++i)
     {
-        ret = cstruct_lub(ret, lv[i]);
+        for (size_t j = i + 1; j < gamma_R.size(); ++j)
+        {
+            if (!cstruct_compatible(gamma_R[i], gamma_R[j]))
+            {
+                return ret;
+            }
+        }
+    }
+
+    for (size_t i = 0; i < gamma_R.size(); ++i)
+    {
+        ret = cstruct_lub(ret, gamma_R[i]);
     }
 
     return ret;

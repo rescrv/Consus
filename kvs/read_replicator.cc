@@ -34,7 +34,7 @@
 #include <e/strescape.h>
 
 // BusyBee
-#include <busybee_constants.h>
+#include <busybee.h>
 
 // consus
 #include "common/constants.h"
@@ -292,6 +292,7 @@ read_replicator :: returncode_is_final(consus_returncode rc)
             return true;
         case CONSUS_LESS_DURABLE:
         case CONSUS_ABORTED:
+        case CONSUS_COMMITTED:
         case CONSUS_NONE_PENDING:
         case CONSUS_INVALID:
         case CONSUS_TIMEOUT:

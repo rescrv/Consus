@@ -26,31 +26,21 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 // consus
-#include "txman/daemon.h"
-#include "txman/mapper.h"
+#include "client/controller.h"
 
-using consus::mapper;
+using consus::controller;
 
-mapper :: mapper(daemon* d)
-    : m_d(d)
+controller :: controller(const configuration* config)
+    : m_config(config)
 {
 }
 
-mapper :: ~mapper() throw ()
+controller :: ~controller() throw ()
 {
 }
 
-bool
-mapper :: lookup(uint64_t server_id, po6::net::location* bound_to)
+po6::net::location
+controller :: lookup(uint64_t id)
 {
-    po6::net::location loc;
-    configuration* c = m_d->get_config();
-
-    if (c && c->exists(comm_id(server_id)))
-    {
-        *bound_to = c->get_address(comm_id(server_id));
-        return true;
-    }
-
-    return false;
+    return m_config->get_address(comm_id(id));
 }

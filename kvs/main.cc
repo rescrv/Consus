@@ -42,7 +42,7 @@
 #include <e/popt.h>
 
 // BusyBee
-#include <busybee_utils.h>
+#include <busybee.h>
 
 // replicant
 #include <replicant.h>

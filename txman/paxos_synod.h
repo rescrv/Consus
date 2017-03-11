@@ -86,7 +86,7 @@ class paxos_synod
         ~paxos_synod() throw ();
 
     public:
-        void init(comm_id us, const paxos_group& pg);
+        void init(comm_id us, const paxos_group& pg, comm_id leader);
         phase_t phase();
         void phase1(ballot* b);
         void phase1a(const ballot& b, ballot* a, pvalue* p);

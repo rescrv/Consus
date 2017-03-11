@@ -61,14 +61,12 @@
 #include <e/serialization.h>
 #include <e/strescape.h>
 
-// BusyBee
-#include <busybee_constants.h>
-
 // consus
 #include <consus.h>
 #include "common/background_thread.h"
 #include "common/constants.h"
 #include "common/consus.h"
+#include "common/generate_token.h"
 #include "common/lock.h"
 #include "common/macros.h"
 #include "common/network_msgtype.h"
@@ -334,7 +332,7 @@ daemon :: migration_bgthread :: do_work()
 daemon :: daemon()
     : m_us()
     , m_gc()
-    , m_busybee_mapper(this)
+    , m_busybee_controller(this)
     , m_busybee()
     , m_coord_cb()
     , m_coord()
@@ -418,7 +416,7 @@ daemon :: run(bool background,
     }
     else
     {
-        if (!e::generate_token(&id))
+        if (!generate_token(&id))
         {
             PLOG(ERROR) << "could not read random token from /dev/urandom";
             return EXIT_FAILURE;
@@ -448,7 +446,7 @@ daemon :: run(bool background,
         return EXIT_FAILURE;
     }
 
-    m_busybee.reset(new busybee_mta(&m_gc, &m_busybee_mapper, bind_to, id, threads));
+    m_busybee.reset(busybee_server::create(&m_busybee_controller, id, bind_to, &m_gc));
 
     for (size_t i = 0; i < threads; ++i)
     {
@@ -549,7 +547,7 @@ daemon :: loop(size_t thread)
     {
         uint64_t _id;
         std::auto_ptr<e::buffer> msg;
-        busybee_returncode rc = m_busybee->recv(&ts, &_id, &msg);
+        busybee_returncode rc = m_busybee->recv(&ts, -1, &_id, &msg);
 
         switch (rc)
         {
@@ -561,8 +559,9 @@ daemon :: loop(size_t thread)
             case BUSYBEE_DISRUPTED:
             case BUSYBEE_INTERRUPTED:
                 continue;
-            case BUSYBEE_POLLFAILED:
-            case BUSYBEE_ADDFDFAIL:
+            case BUSYBEE_SEE_ERRNO:
+                PLOG(ERROR) << "receive error";
+                continue;
             case BUSYBEE_TIMEOUT:
             case BUSYBEE_EXTERNAL:
             default:
@@ -1181,10 +1180,11 @@ daemon :: send(comm_id id, std::auto_ptr<e::buffer> msg)
         case BUSYBEE_DISRUPTED:
             LOG_IF(INFO, s_debug_mode) << "message not sent: disrupted";
             return false;
+        case BUSYBEE_SEE_ERRNO:
+            PLOG(ERROR) << "send error";
+            return false;
         case BUSYBEE_SHUTDOWN:
         case BUSYBEE_INTERRUPTED:
-        case BUSYBEE_POLLFAILED:
-        case BUSYBEE_ADDFDFAIL:
         case BUSYBEE_TIMEOUT:
         case BUSYBEE_EXTERNAL:
         default:

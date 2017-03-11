@@ -59,11 +59,9 @@
 #include <e/identity.h>
 #include <e/strescape.h>
 
-// BusyBee
-#include <busybee_constants.h>
-
 // consus
 #include "common/coordinator_returncode.h"
+#include "common/generate_token.h"
 #include "common/macros.h"
 #include "txman/daemon.h"
 #include "txman/log_entry_t.h"
@@ -245,7 +243,7 @@ daemon :: coordinator_callback :: is_steady_state(comm_id id)
 daemon :: daemon()
     : m_us()
     , m_gc()
-    , m_busybee_mapper(this)
+    , m_busybee_controller(this)
     , m_busybee()
     , m_coord_cb()
     , m_coord()
@@ -335,7 +333,7 @@ daemon :: run(bool background,
     }
     else
     {
-        if (!e::generate_token(&id))
+        if (!generate_token(&id))
         {
             PLOG(ERROR) << "could not read random token from /dev/urandom";
             return EXIT_FAILURE;
@@ -365,7 +363,7 @@ daemon :: run(bool background,
         return EXIT_FAILURE;
     }
 
-    m_busybee.reset(new busybee_mta(&m_gc, &m_busybee_mapper, bind_to, id, threads));
+    m_busybee.reset(busybee_server::create(&m_busybee_controller, id, bind_to, &m_gc));
     m_durable_thread.start();
 
     for (size_t i = 0; i < threads; ++i)
@@ -466,7 +464,7 @@ daemon :: loop(size_t thread)
     {
         uint64_t _id;
         std::auto_ptr<e::buffer> msg;
-        busybee_returncode rc = m_busybee->recv(&ts, &_id, &msg);
+        busybee_returncode rc = m_busybee->recv(&ts, -1, &_id, &msg);
 
         switch (rc)
         {
@@ -478,9 +476,11 @@ daemon :: loop(size_t thread)
             case BUSYBEE_DISRUPTED:
             case BUSYBEE_INTERRUPTED:
                 continue;
-            case BUSYBEE_POLLFAILED:
-            case BUSYBEE_ADDFDFAIL:
             case BUSYBEE_TIMEOUT:
+                continue;
+            case BUSYBEE_SEE_ERRNO:
+                PLOG(ERROR) << "receive error";
+                continue;
             case BUSYBEE_EXTERNAL:
             default:
                 LOG(ERROR) << "internal invariants broken; crashing";
@@ -608,13 +608,6 @@ daemon :: loop(size_t thread)
                 LOG(INFO) << "received " << mt << " message which transaction-managers do not process";
                 break;
         }
-
-#ifdef CONSUS_LOG_ALL_MESSAGES
-        if (s_debug_mode)
-        {
-            LOG(INFO) << "quiescent state";
-        }
-#endif
 
         m_gc.quiescent_state(&ts);
     }
@@ -1075,10 +1068,6 @@ daemon :: process_gv_propose(comm_id id, std::auto_ptr<e::buffer>, e::unpacker u
         {
             xact->externally_work_state_machine(this);
         }
-        else
-        {
-            LOG(INFO) << transaction_group::log(tg) + " global voter: dropped propose from=" << id;
-        }
     }
 }
 
@@ -1102,10 +1091,6 @@ daemon :: process_gv_vote_1a(comm_id id, std::auto_ptr<e::buffer>, e::unpacker u
         if (xact)
         {
             xact->externally_work_state_machine(this);
-        }
-        else
-        {
-            LOG(INFO) << transaction_group::log(tg) + " global voter: dropped 1a from=" << id;
         }
     }
 }
@@ -1131,10 +1116,6 @@ daemon :: process_gv_vote_1b(comm_id id, std::auto_ptr<e::buffer>, e::unpacker u
         {
             xact->externally_work_state_machine(this);
         }
-        else
-        {
-            LOG(INFO) << transaction_group::log(tg) + " global voter: dropped 1b from=" << id;
-        }
     }
 }
 
@@ -1159,10 +1140,6 @@ daemon :: process_gv_vote_2a(comm_id id, std::auto_ptr<e::buffer>, e::unpacker u
         {
             xact->externally_work_state_machine(this);
         }
-        else
-        {
-            LOG(INFO) << transaction_group::log(tg) + " global voter: dropped 2a from=" << id;
-        }
     }
 }
 
@@ -1186,10 +1163,6 @@ daemon :: process_gv_vote_2b(comm_id id, std::auto_ptr<e::buffer>, e::unpacker u
         if (xact)
         {
             xact->externally_work_state_machine(this);
-        }
-        else
-        {
-            LOG(INFO) << transaction_group::log(tg) + " global voter: dropped 2b from=" << id;
         }
     }
 }
@@ -1354,6 +1327,12 @@ daemon :: send(comm_id id, std::auto_ptr<e::buffer> msg)
         return false;
     }
 
+    if (id == m_us.id)
+    {
+        m_busybee->deliver(id.get(), msg);
+        return true;
+    }
+
     busybee_returncode rc = m_busybee->send(id.get(), msg);
 
     switch (rc)
@@ -1363,10 +1342,11 @@ daemon :: send(comm_id id, std::auto_ptr<e::buffer> msg)
         case BUSYBEE_DISRUPTED:
             LOG_IF(INFO, s_debug_mode) << "message not sent: disrupted";
             return false;
+        case BUSYBEE_SEE_ERRNO:
+            PLOG(ERROR) << "receive error";
+            return false;
         case BUSYBEE_SHUTDOWN:
         case BUSYBEE_INTERRUPTED:
-        case BUSYBEE_POLLFAILED:
-        case BUSYBEE_ADDFDFAIL:
         case BUSYBEE_TIMEOUT:
         case BUSYBEE_EXTERNAL:
         default:
@@ -1396,6 +1376,14 @@ daemon :: send(const paxos_group& g, std::auto_ptr<e::buffer> msg)
     for (unsigned i = 0; i < g.members_sz; ++i)
     {
         std::auto_ptr<e::buffer> m(msg->copy());
+
+        if (g.members[i] == m_us.id)
+        {
+            m_busybee->deliver(g.members[i].get(), m);
+            ++count;
+            continue;
+        }
+
         busybee_returncode rc = m_busybee->send(g.members[i].get(), m);
 
         switch (rc)
@@ -1406,10 +1394,11 @@ daemon :: send(const paxos_group& g, std::auto_ptr<e::buffer> msg)
             case BUSYBEE_DISRUPTED:
                 LOG_IF(INFO, s_debug_mode) << "message not sent to " << g.members[i];
                 break;
+            case BUSYBEE_SEE_ERRNO:
+                PLOG(ERROR) << "receive error";
+                break;
             case BUSYBEE_SHUTDOWN:
             case BUSYBEE_INTERRUPTED:
-            case BUSYBEE_POLLFAILED:
-            case BUSYBEE_ADDFDFAIL:
             case BUSYBEE_TIMEOUT:
             case BUSYBEE_EXTERNAL:
             default:
@@ -1516,23 +1505,81 @@ daemon :: send_when_durable(int64_t idx, const comm_id* ids, e::buffer** msgs, s
         return;
     }
 
-    bool wake = false;
+    bool send_now = false;
 
     {
         po6::threads::mutex::hold hold(&m_durable_mtx);
-        wake = idx <= m_durable_up_to;
+        send_now = idx <= m_durable_up_to;
 
-        for (size_t i = 0; i < sz; ++i)
+        if (!send_now)
         {
-            durable_msg d(idx, ids[i], msgs[i]);
-            m_durable_msgs.push_back(d);
-            std::push_heap(m_durable_msgs.begin(), m_durable_msgs.end());
+            for (size_t i = 0; i < sz; ++i)
+            {
+                durable_msg d(idx, ids[i], msgs[i]);
+                m_durable_msgs.push_back(d);
+                std::push_heap(m_durable_msgs.begin(), m_durable_msgs.end());
+            }
         }
     }
 
-    if (wake)
+    if (send_now)
     {
-        m_log.wake();
+        for (size_t i = 0; i < sz; ++i)
+        {
+            send(ids[i], std::auto_ptr<e::buffer>(msgs[i]));
+        }
+    }
+}
+
+void
+daemon :: send_if_durable(int64_t idx, paxos_group_id g, std::auto_ptr<e::buffer> msg)
+{
+    const paxos_group* group = get_config()->get_group(g);
+
+    if (!group || group->members_sz <= 0)
+    {
+        return;
+    }
+
+    e::buffer* msgs[CONSUS_MAX_REPLICATION_FACTOR];
+    msgs[0] = msg.release();
+
+    for (size_t i = 1; i < group->members_sz; ++i)
+    {
+        msgs[i] = msgs[0]->copy();
+    }
+
+    send_if_durable(idx, group->members, msgs, group->members_sz);
+}
+
+void
+daemon :: send_if_durable(int64_t idx, comm_id id, std::auto_ptr<e::buffer> msg)
+{
+    e::buffer* m = msg.release();
+    send_if_durable(idx, &id, &m, 1);
+}
+
+void
+daemon :: send_if_durable(int64_t idx, const comm_id* ids, e::buffer** msgs, size_t sz)
+{
+    bool should_send = false;
+    m_durable_mtx.lock();
+    should_send = idx <= m_durable_up_to;
+    m_durable_mtx.unlock();
+
+    if (idx < 0 || !should_send)
+    {
+        for (size_t i = 0; i < sz; ++i)
+        {
+            delete msgs[i];
+        }
+
+        return;
+    }
+
+    for (size_t i = 0; i < sz; ++i)
+    {
+        send(ids[i], std::auto_ptr<e::buffer>(msgs[i]));
     }
 }
 
@@ -1691,8 +1738,8 @@ daemon :: pump()
 
         for (global_voter_map_t::iterator it(&m_global_voters); it.valid(); ++it)
         {
-            global_voter* lv = *it;
-            lv->externally_work_state_machine(this);
+            global_voter* gv = *it;
+            gv->externally_work_state_machine(this);
         }
     }
 

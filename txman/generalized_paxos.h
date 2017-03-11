@@ -37,6 +37,10 @@
 #include "common/macros.h"
 #include "common/paxos_group.h"
 
+#ifndef GENERALIZED_PAXOS_DEBUG
+#define GENERALIZED_PAXOS_DEBUG 1
+#endif
+
 BEGIN_CONSUS_NAMESPACE
 
 class generalized_paxos
@@ -63,9 +67,8 @@ class generalized_paxos
         struct comparator
         {
             comparator();
+            virtual ~comparator() throw ();
             virtual bool conflict(const command& a, const command& b) const = 0;
-            protected:
-                ~comparator() throw ();
         };
         struct cstruct
         {
@@ -74,6 +77,7 @@ class generalized_paxos
             bool operator == (const cstruct& rhs) const;
             bool operator != (const cstruct& rhs) const { return !(*this == rhs); }
 
+            bool is_none() { return commands.empty(); }
             std::vector<command> commands;
         };
         struct ballot
@@ -178,6 +182,9 @@ class generalized_paxos
         // limited amount that this instance can observe
         cstruct learned();
 
+        // used to decide retransmits/etc
+        void all_accepted_commands(std::vector<command>* commands);
+
     private:
         enum state_t
         {
@@ -239,7 +246,7 @@ class generalized_paxos
         cstruct m_leader_value;
         std::vector<message_p1b> m_promises;
 
-        std::vector<message_p2b> m_learned;
+        std::vector<message_p2b> m_accepted;
         cstruct m_learned_cached;
 
     private:

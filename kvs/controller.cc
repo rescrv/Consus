@@ -26,22 +26,29 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 // consus
-#include "client/mapper.h"
+#include "kvs/controller.h"
+#include "kvs/daemon.h"
 
-using consus::mapper;
+using consus::controller;
 
-mapper :: mapper(const configuration* config)
-    : m_config(config)
+controller :: controller(daemon* d)
+    : m_d(d)
 {
 }
 
-mapper :: ~mapper() throw ()
+controller :: ~controller() throw ()
 {
 }
 
-bool
-mapper :: lookup(uint64_t id, po6::net::location* addr)
+po6::net::location
+controller :: lookup(uint64_t server_id)
 {
-    *addr = m_config->get_address(comm_id(id));
-    return *addr != po6::net::location();
+    configuration* c = m_d->get_config();
+
+    if (c && c->exists(comm_id(server_id)))
+    {
+        return c->get_address(comm_id(server_id));
+    }
+
+    return po6::net::location();
 }

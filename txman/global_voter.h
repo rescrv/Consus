@@ -28,11 +28,15 @@
 #ifndef consus_txman_global_voter_h_
 #define consus_txman_global_voter_h_
 
+// STL
+#include <algorithm>
+
 // po6
 #include <po6/threads/mutex.h>
 
 // consus
 #include "namespace.h"
+#include "common/transmit_limiter.h"
 #include "common/transaction_group.h"
 #include "txman/generalized_paxos.h"
 
@@ -88,7 +92,8 @@ class global_voter
         void send_global(const generalized_paxos::message_p1b& m, daemon* d);
         void send_global(const generalized_paxos::message_p2a& m, daemon* d);
         void send_global(const generalized_paxos::message_p2b& m, daemon* d);
-        bool propose_global(const generalized_paxos::command& c, daemon* d);
+        void propose_global(const generalized_paxos::command& c, uint64_t log_entry,
+                            daemon* d, void (daemon::*send_func)(int64_t, paxos_group_id, std::auto_ptr<e::buffer>));
         uint64_t tally_votes(const char* prefix, const generalized_paxos::cstruct& v);
 
     private:
@@ -103,23 +108,14 @@ class global_voter
         int64_t m_highest_log_entry;
         generalized_paxos::cstruct m_dc_prev_learned;
         // data center paxos: rate limiting
-        uint64_t m_rate_vote_timestamp;
-        generalized_paxos::message_p1a m_outer_rate_m1a;
-        uint64_t m_outer_rate_m1a_timestamp;
-        generalized_paxos::message_p1b m_outer_rate_m1b;
-        uint64_t m_outer_rate_m1b_timestamp;
-        generalized_paxos::message_p2a m_outer_rate_m2a;
-        uint64_t m_outer_rate_m2a_timestamp;
-        generalized_paxos::message_p2b m_outer_rate_m2b;
-        uint64_t m_outer_rate_m2b_timestamp;
-        generalized_paxos::message_p1a m_inner_rate_m1a;
-        uint64_t m_inner_rate_m1a_timestamp;
-        generalized_paxos::message_p1b m_inner_rate_m1b;
-        uint64_t m_inner_rate_m1b_timestamp;
-        generalized_paxos::message_p2a m_inner_rate_m2a;
-        uint64_t m_inner_rate_m2a_timestamp;
-        generalized_paxos::message_p2b m_inner_rate_m2b;
-        uint64_t m_inner_rate_m2b_timestamp;
+        transmit_limiter<generalized_paxos::command, daemon> m_xmit_vote;
+        transmit_limiter<generalized_paxos::message_p1a, daemon> m_xmit_outer_m1a;
+        transmit_limiter<generalized_paxos::message_p2a, daemon> m_xmit_outer_m2a;
+        transmit_limiter<generalized_paxos::message_p2b, daemon> m_xmit_outer_m2b;
+        transmit_limiter<generalized_paxos::message_p1a, daemon> m_xmit_inner_m1a;
+        transmit_limiter<generalized_paxos::message_p1b, daemon> m_xmit_inner_m1b;
+        transmit_limiter<generalized_paxos::message_p2a, daemon> m_xmit_inner_m2a;
+        transmit_limiter<generalized_paxos::message_p2b, daemon> m_xmit_inner_m2b;
         // global paxos
         uint64_t m_local_vote;
         paxos_group_id m_dcs[CONSUS_MAX_REPLICATION_FACTOR];

@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2016, Robert Escriva, Cornell University
+// Copyright (c) 2015-2017, Robert Escriva, Cornell University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -40,8 +40,7 @@
 #include <e/flagfd.h>
 
 // BusyBee
-#include <busybee_returncode.h>
-#include <busybee_st.h>
+#include <busybee.h>
 
 // Replicant
 #include <replicant.h>
@@ -51,7 +50,7 @@
 #include <consus-admin.h>
 #include "namespace.h"
 #include "client/configuration.h"
-#include "client/mapper.h"
+#include "client/controller.h"
 #include "client/pending.h"
 #include "client/server_selector.h"
 
@@ -127,8 +126,8 @@ class client
         char* m_config_data;
         size_t m_config_data_sz;
         // communication
-        mapper m_busybee_mapper;
-        busybee_st m_busybee;
+        controller m_busybee_controller;
+        const std::auto_ptr<busybee_client> m_busybee;
         // nonces
         int64_t m_next_client_id;
         uint64_t m_next_server_nonce;

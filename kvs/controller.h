@@ -25,11 +25,11 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef consus_txman_mapper_h_
-#define consus_txman_mapper_h_
+#ifndef consus_kvs_controller_h_
+#define consus_kvs_controller_h_
 
 // BusyBee
-#include <busybee_mapper.h>
+#include <busybee.h>
 
 // consus
 #include "namespace.h"
@@ -37,23 +37,23 @@
 BEGIN_CONSUS_NAMESPACE
 class daemon;
 
-class mapper : public busybee_mapper
+class controller : public busybee_controller
 {
     public:
-        mapper(daemon* d);
-        ~mapper() throw ();
+        controller(daemon* d);
+        ~controller() throw ();
 
     public:
-        virtual bool lookup(uint64_t server_id, po6::net::location* bound_to);
+        virtual po6::net::location lookup(uint64_t server_id);
 
     private:
         daemon* m_d;
 
     private:
-        mapper(const mapper&);
-        mapper& operator = (const mapper&);
+        controller(const controller&);
+        controller& operator = (const controller&);
 };
 
 END_CONSUS_NAMESPACE
 
-#endif // consus_txman_mapper_h_
+#endif // consus_kvs_controller_h_

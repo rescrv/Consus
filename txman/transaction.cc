@@ -39,7 +39,7 @@
 #include <e/strescape.h>
 
 // BusyBee
-#include <busybee_constants.h>
+#include <busybee.h>
 
 // consus
 #include "common/consus.h"
@@ -1090,6 +1090,11 @@ transaction :: ensure_initialized()
 void
 transaction :: work_state_machine(daemon* d)
 {
+    if (m_init_timestamp == 0)
+    {
+        return;
+    }
+
     switch (m_state)
     {
         case INITIALIZED:

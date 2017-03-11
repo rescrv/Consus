@@ -29,7 +29,7 @@
 #include <po6/time.h>
 
 // BusyBee
-#include <busybee_constants.h>
+#include <busybee.h>
 
 // consus
 #include "common/network_msgtype.h"

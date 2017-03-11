@@ -26,7 +26,7 @@
 // POSSIBILITY OF SUCH DAMAGE.
 
 // BusyBee
-#include <busybee_constants.h>
+#include <busybee.h>
 
 // Google Log
 #include <glog/logging.h>

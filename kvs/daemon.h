@@ -45,7 +45,7 @@
 #include <e/state_hash_table.h>
 
 // BusyBee
-#include <busybee_mta.h>
+#include <busybee.h>
 
 // consus
 #include "namespace.h"
@@ -53,10 +53,10 @@
 #include "common/coordinator_link.h"
 #include "common/kvs.h"
 #include "kvs/configuration.h"
+#include "kvs/controller.h"
 #include "kvs/datalayer.h"
 #include "kvs/lock_manager.h"
 #include "kvs/lock_replicator.h"
-#include "kvs/mapper.h"
 #include "kvs/migrator.h"
 #include "kvs/read_replicator.h"
 #include "kvs/write_replicator.h"
@@ -89,7 +89,7 @@ class daemon
         typedef e::state_hash_table<uint64_t, read_replicator> read_replicator_map_t;
         typedef e::state_hash_table<uint64_t, write_replicator> write_replicator_map_t;
         typedef e::state_hash_table<partition_id, migrator> migrator_map_t;
-        friend class mapper;
+        friend class controller;
         friend class lock_manager;
         friend class lock_replicator;
         friend class lock_state;
@@ -134,8 +134,8 @@ class daemon
     private:
         kvs m_us;
         e::garbage_collector m_gc;
-        mapper m_busybee_mapper;
-        std::auto_ptr<busybee_mta> m_busybee;
+        controller m_busybee_controller;
+        std::auto_ptr<busybee_server> m_busybee;
         std::auto_ptr<coordinator_callback> m_coord_cb;
         std::auto_ptr<coordinator_link> m_coord;
         configuration* m_config;

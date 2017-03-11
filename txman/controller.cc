@@ -25,35 +25,30 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef consus_kvs_mapper_h_
-#define consus_kvs_mapper_h_
-
-// BusyBee
-#include <busybee_mapper.h>
-
 // consus
-#include "namespace.h"
+#include "txman/controller.h"
+#include "txman/daemon.h"
 
-BEGIN_CONSUS_NAMESPACE
-class daemon;
+using consus::controller;
 
-class mapper : public busybee_mapper
+controller :: controller(daemon* d)
+    : m_d(d)
 {
-    public:
-        mapper(daemon* d);
-        ~mapper() throw ();
+}
 
-    public:
-        virtual bool lookup(uint64_t server_id, po6::net::location* bound_to);
+controller :: ~controller() throw ()
+{
+}
 
-    private:
-        daemon* m_d;
+po6::net::location
+controller :: lookup(uint64_t server_id)
+{
+    configuration* c = m_d->get_config();
 
-    private:
-        mapper(const mapper&);
-        mapper& operator = (const mapper&);
-};
+    if (c && c->exists(comm_id(server_id)))
+    {
+        return c->get_address(comm_id(server_id));
+    }
 
-END_CONSUS_NAMESPACE
-
-#endif // consus_kvs_mapper_h_
+    return po6::net::location();
+}

@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2016, Robert Escriva, Cornell University
+// Copyright (c) 2015-2017, Robert Escriva, Cornell University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -25,68 +25,35 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-// STL
-#include <sstream>
+#ifndef consus_client_controller_h_
+#define consus_client_controller_h_
 
 // BusyBee
 #include <busybee.h>
 
 // consus
-#include "common/network_msgtype.h"
-#include "kvs/configuration.h"
-#include "kvs/daemon.h"
-#include "kvs/lock_manager.h"
-#include "kvs/replica_set.h"
+#include "namespace.h"
+#include "client/configuration.h"
 
-using consus::lock_manager;
+BEGIN_CONSUS_NAMESPACE
 
-extern std::vector<std::string> split_by_newlines(std::string s);
-
-lock_manager :: lock_manager(e::garbage_collector* gc)
-    : m_locks(gc)
+class controller : public ::busybee_controller
 {
-}
+    public:
+        controller(const configuration* config);
+        ~controller() throw ();
 
-lock_manager :: ~lock_manager() throw ()
-{
-}
+    public:
+        virtual po6::net::location lookup(uint64_t id);
 
-void
-lock_manager :: lock(comm_id id, uint64_t nonce,
-                     const e::slice& table, const e::slice& key,
-                     const transaction_group& tg, daemon* d)
-{
-    lock_map_t::state_reference sr;
-    lock_state* s = m_locks.get_or_create_state(table_key_pair(table, key), &sr);
-    s->enqueue_lock(id, nonce, tg, d);
-}
+    private:
+        controller(const controller&);
+        controller& operator = (const controller&);
 
-void
-lock_manager :: unlock(comm_id id, uint64_t nonce,
-                       const e::slice& table, const e::slice& key,
-                       const transaction_group& tg, daemon* d)
-{
-    lock_map_t::state_reference sr;
-    lock_state* s = m_locks.get_or_create_state(table_key_pair(table, key), &sr);
-    s->unlock(id, nonce, tg, d);
-}
+    private:
+        const configuration* m_config;
+};
 
-std::string
-lock_manager :: debug_dump()
-{
-    std::ostringstream ostr;
+END_CONSUS_NAMESPACE
 
-    for (lock_map_t::iterator it(&m_locks); it.valid(); ++it)
-    {
-        lock_state* s = *it;
-        std::string debug = s->debug_dump();
-        std::vector<std::string> lines = split_by_newlines(debug);
-
-        for (size_t i = 0; i < lines.size(); ++i)
-        {
-            ostr << s->logid() << ": " << lines[i] << "\n";
-        }
-    }
-
-    return ostr.str();
-}
+#endif // consus_client_controller_h_

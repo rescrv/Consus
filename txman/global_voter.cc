@@ -35,7 +35,7 @@
 #include <e/strescape.h>
 
 // BusyBee
-#include <busybee_constants.h>
+#include <busybee.h>
 
 // consus
 #include "txman/daemon.h"
@@ -126,23 +126,14 @@ global_voter :: global_voter(const transaction_group& tg)
     , m_data_center_gp()
     , m_highest_log_entry(0)
     , m_dc_prev_learned()
-    , m_rate_vote_timestamp(0)
-    , m_outer_rate_m1a()
-    , m_outer_rate_m1a_timestamp(0)
-    , m_outer_rate_m1b()
-    , m_outer_rate_m1b_timestamp(0)
-    , m_outer_rate_m2a()
-    , m_outer_rate_m2a_timestamp(0)
-    , m_outer_rate_m2b()
-    , m_outer_rate_m2b_timestamp(0)
-    , m_inner_rate_m1a()
-    , m_inner_rate_m1a_timestamp(0)
-    , m_inner_rate_m1b()
-    , m_inner_rate_m1b_timestamp(0)
-    , m_inner_rate_m2a()
-    , m_inner_rate_m2a_timestamp(0)
-    , m_inner_rate_m2b()
-    , m_inner_rate_m2b_timestamp(0)
+    , m_xmit_vote()
+    , m_xmit_outer_m1a()
+    , m_xmit_outer_m2a()
+    , m_xmit_outer_m2b()
+    , m_xmit_inner_m1a()
+    , m_xmit_inner_m1b()
+    , m_xmit_inner_m2a()
+    , m_xmit_inner_m2b()
     , m_local_vote(0)
     , m_dcs_sz(0)
     , m_global_cmp(new global_comparator())
@@ -195,6 +186,7 @@ global_voter :: init(uint64_t vote, const paxos_group_id* dcs, size_t dcs_sz, da
     }
 
     m_local_vote = vote;
+    // XXX inefficient to do always; do only in debug mode
     std::ostringstream ostr;
     ostr << "[";
 
@@ -353,7 +345,7 @@ global_voter :: process_p2a(comm_id id, const generalized_paxos::message_p2a& m,
     m_data_center_gp.process_p2a(m, &send, &r);
     const uint64_t now = po6::monotonic_time();
 
-    if (send && m_outer_rate_m2b != r)
+    if (send && r != m_xmit_outer_m2b.value())
     {
         std::string entry;
         e::packer(&entry)
@@ -366,19 +358,18 @@ global_voter :: process_p2a(comm_id id, const generalized_paxos::message_p2a& m,
             << pretty_print_outer(m.v);
     }
 
-    if (send &&
-        (m_outer_rate_m2b != r ||
-         m_outer_rate_m2b_timestamp + d->resend_interval() < now))
+    if (send && m_xmit_outer_m2b.may_transmit(r, now, d))
     {
+        uint64_t log_entry;
+        void (daemon::*send_func)(int64_t, paxos_group_id, std::auto_ptr<e::buffer>);
+        m_xmit_outer_m2b.transmit_params(r, now, m_highest_log_entry, &log_entry, &send_func);
         const size_t sz = BUSYBEE_HEADER_SIZE
                         + pack_size(GV_VOTE_2B)
                         + pack_size(m_tg)
                         + pack_size(r);
         std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
         msg->pack_at(BUSYBEE_HEADER_SIZE) << GV_VOTE_2B << m_tg << r;
-        d->send_when_durable(m_highest_log_entry, m_tg.group, msg);
-        m_outer_rate_m2b = r;
-        m_outer_rate_m2b_timestamp = now;
+        (d->*send_func)(log_entry, m_tg.group, msg);
     }
 
     work_state_machine(d);
@@ -432,6 +423,7 @@ global_voter :: outcome(uint64_t* v)
 void
 global_voter :: unvoted_data_centers(paxos_group_id* dcs, size_t* dcs_sz)
 {
+    m_mtx.lock();
     *dcs_sz = m_dcs_sz;
 
     for (size_t i = 0; i < m_dcs_sz; ++i)
@@ -439,10 +431,12 @@ global_voter :: unvoted_data_centers(paxos_group_id* dcs, size_t* dcs_sz)
         dcs[i] = m_dcs[i];
     }
 
-    generalized_paxos::cstruct val = m_data_center_gp.accepted_value();
+    std::vector<generalized_paxos::command> cmds;
+    m_data_center_gp.all_accepted_commands(&cmds);
+    m_mtx.unlock();
 
-    for (std::vector<generalized_paxos::command>::iterator it = val.commands.begin();
-            it != val.commands.end(); ++it)
+    for (std::vector<generalized_paxos::command>::iterator it = cmds.begin();
+            it != cmds.end(); ++it)
     {
         const generalized_paxos::command& c(*it);
         generalized_paxos::command inner_c;
@@ -650,17 +644,6 @@ global_voter :: pretty_print_inner(const generalized_paxos::command& c)
 bool
 global_voter :: preconditions_for_data_center_paxos(daemon* d)
 {
-    uint64_t outcome;
-
-    // XXX failure sensitive; other nodes may expect response
-    if (d->m_dispositions.get(m_tg, &outcome))
-    {
-        m_outcome_in_dispositions = true;
-        m_has_outcome = true;
-        m_outcome = outcome;
-        return false;
-    }
-
     if (!m_data_center_init)
     {
         const paxos_group* group = d->get_config()->get_group(m_tg.group);
@@ -699,11 +682,12 @@ global_voter :: work_state_machine(daemon* d)
                              &send_m3, &m3);
     const uint64_t now = po6::monotonic_time();
 
-    if (send_m1 &&
-        (m_outer_rate_m1a != m1 ||
-         m_outer_rate_m1a_timestamp + d->resend_interval() < now))
+    if (send_m1 && m_xmit_outer_m1a.may_transmit(m1, now, d))
     {
-        LOG_IF(INFO, s_debug_mode && m_outer_rate_m1a != m1)
+        uint64_t log_entry;
+        void (daemon::*send_func)(int64_t, paxos_group_id, std::auto_ptr<e::buffer>);
+        m_xmit_outer_m1a.transmit_params(m1, now, m_highest_log_entry, &log_entry, &send_func);
+        LOG_IF(INFO, s_debug_mode && m1 != m_xmit_outer_m1a.value())
             << logid () << "leading " << ph(m1.b);
         const size_t sz = BUSYBEE_HEADER_SIZE
                         + pack_size(GV_VOTE_1A)
@@ -711,16 +695,15 @@ global_voter :: work_state_machine(daemon* d)
                         + pack_size(m1);
         std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
         msg->pack_at(BUSYBEE_HEADER_SIZE) << GV_VOTE_1A << m_tg << m1;
-        d->send_when_durable(m_highest_log_entry, m_tg.group, msg);
-        m_outer_rate_m1a = m1;
-        m_outer_rate_m1a_timestamp = now;
+        (d->*send_func)(m_highest_log_entry, m_tg.group, msg);
     }
 
-    if (send_m2 &&
-        (m_outer_rate_m2a != m2 ||
-         m_outer_rate_m2a_timestamp + d->resend_interval() < now))
+    if (send_m2 && m_xmit_outer_m2a.may_transmit(m2, now, d))
     {
-        LOG_IF(INFO, s_debug_mode && m_outer_rate_m2a != m2)
+        uint64_t log_entry;
+        void (daemon::*send_func)(int64_t, paxos_group_id, std::auto_ptr<e::buffer>);
+        m_xmit_outer_m2a.transmit_params(m2, now, m_highest_log_entry, &log_entry, &send_func);
+        LOG_IF(INFO, s_debug_mode && m2 != m_xmit_outer_m2a.value())
             << logid() << "using " << ph(m2.b)
             << " to suggest state machine input "
             << pretty_print_outer(m2.v);
@@ -730,16 +713,15 @@ global_voter :: work_state_machine(daemon* d)
                         + pack_size(m2);
         std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
         msg->pack_at(BUSYBEE_HEADER_SIZE) << GV_VOTE_2A << m_tg << m2;
-        d->send_when_durable(m_highest_log_entry, m_tg.group, msg);
-        m_outer_rate_m2a = m2;
-        m_outer_rate_m2a_timestamp = now;
+        (d->*send_func)(m_highest_log_entry, m_tg.group, msg);
     }
 
-    if (send_m3 &&
-        (m_outer_rate_m2b != m3 ||
-         m_outer_rate_m2b_timestamp + d->resend_interval() < now))
+    if (send_m3 && m_xmit_outer_m2b.may_transmit(m3, now, d))
     {
-        LOG_IF(INFO, s_debug_mode && m_outer_rate_m2b != m3)
+        uint64_t log_entry;
+        void (daemon::*send_func)(int64_t, paxos_group_id, std::auto_ptr<e::buffer>);
+        m_xmit_outer_m2b.transmit_params(m3, now, m_highest_log_entry, &log_entry, &send_func);
+        LOG_IF(INFO, s_debug_mode && m3 != m_xmit_outer_m2b.value())
             << logid() << comm_id(m3.acceptor.get())
             << "/this-node accepted state machine input "
             << pretty_print_outer(m3.v);
@@ -749,9 +731,7 @@ global_voter :: work_state_machine(daemon* d)
                         + pack_size(m3);
         std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
         msg->pack_at(BUSYBEE_HEADER_SIZE) << GV_VOTE_2B << m_tg << m3;
-        d->send_when_durable(m_highest_log_entry, m_tg.group, msg);
-        m_outer_rate_m2b = m3;
-        m_outer_rate_m2b_timestamp = now;
+        (d->*send_func)(m_highest_log_entry, m_tg.group, msg);
     }
 
     if (!preconditions_for_global_paxos(d))
@@ -766,13 +746,40 @@ global_voter :: work_state_machine(daemon* d)
     cg.type = GLOBAL_VOTER_COMMAND;
     e::packer(&cg.value) << cv;
 
-    if (m_rate_vote_timestamp + d->resend_interval() < now &&
-        propose_global(cg, d))
+    if (m_xmit_vote.may_transmit(cg, now, d))
     {
-        m_rate_vote_timestamp = now;
+        uint64_t log_entry;
+        void (daemon::*send_func)(int64_t, paxos_group_id, std::auto_ptr<e::buffer>);
+        m_xmit_vote.transmit_params(cg, now, m_highest_log_entry, &log_entry, &send_func);
+        const paxos_group* group = d->get_config()->get_group(m_tg.group);
+
+        // XXX excessive retransmit
+        if (group && group->members_sz > 0)
+        {
+            for (unsigned i = 0; i < m_dcs_sz; ++i)
+            {
+                transaction_group tg(m_tg);
+                tg.group = m_dcs[i];
+                const size_t sz = BUSYBEE_HEADER_SIZE
+                                + pack_size(GV_PROPOSE)
+                                + pack_size(tg)
+                                + pack_size(cg);
+                std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
+                msg->pack_at(BUSYBEE_HEADER_SIZE) << GV_PROPOSE << tg << cg;
+                (d->*send_func)(log_entry, m_dcs[i], msg);
+            }
+        }
     }
 
     generalized_paxos::cstruct dc_learned = m_data_center_gp.learned();
+
+    if (dc_learned.commands.size() < m_dc_prev_learned.commands.size())
+    {
+        LOG(ERROR) << logid() << "outer generalized paxos unlearned state machine's input: "
+                   << pretty_print_outer(m_dc_prev_learned)
+                   << " truncated to "
+                   << pretty_print_outer(dc_learned);
+    }
 
     if (s_debug_mode && dc_learned != m_dc_prev_learned)
     {
@@ -916,7 +923,6 @@ global_voter :: work_state_machine(daemon* d)
     if (!m_has_outcome)
     {
         generalized_paxos::cstruct votes = m_global_gp.learned();
-        LOG_IF(INFO, s_debug_mode) << XXX() << "learned votes " << pretty_print_inner(votes);
         uint64_t outcome = tally_votes("learned", votes);
 
         if (outcome != 0)
@@ -932,19 +938,16 @@ global_voter :: send_global(const generalized_paxos::message_p1a& m, daemon* d)
 {
     const uint64_t now = po6::monotonic_time();
 
-    if (m_inner_rate_m1a != m ||
-        m_inner_rate_m1a_timestamp + d->resend_interval() < now)
+    if (m_xmit_inner_m1a.may_transmit(m, now, d))
     {
         generalized_paxos::command c;
         c.type = GLOBAL_VOTER_MESSAGE_1A;
         e::packer(&c.value) << m;
 
-        if (propose_global(c, d))
-        {
-            LOG_IF(INFO, s_debug_mode) << XXX() << m_tg.group << " leading " << ph(m.b);
-            m_inner_rate_m1a = m;
-            m_inner_rate_m1a_timestamp = now;
-        }
+        uint64_t log_entry;
+        void (daemon::*send_func)(int64_t, paxos_group_id, std::auto_ptr<e::buffer>);
+        m_xmit_inner_m1a.transmit_params(m, now, m_highest_log_entry, &log_entry, &send_func);
+        propose_global(c, log_entry, d, send_func);
     }
 }
 
@@ -953,19 +956,16 @@ global_voter :: send_global(const generalized_paxos::message_p1b& m, daemon* d)
 {
     const uint64_t now = po6::monotonic_time();
 
-    if (m_inner_rate_m1b != m ||
-        m_inner_rate_m1b_timestamp + d->resend_interval() < now)
+    if (m_xmit_inner_m1b.may_transmit(m, now, d))
     {
         generalized_paxos::command c;
         c.type = GLOBAL_VOTER_MESSAGE_1B;
         e::packer(&c.value) << m;
 
-        if (propose_global(c, d))
-        {
-            LOG_IF(INFO, s_debug_mode) << XXX() << m_tg.group << " following " << ph(m.b);
-            m_inner_rate_m1b = m;
-            m_inner_rate_m1b_timestamp = now;
-        }
+        uint64_t log_entry;
+        void (daemon::*send_func)(int64_t, paxos_group_id, std::auto_ptr<e::buffer>);
+        m_xmit_inner_m1b.transmit_params(m, now, m_highest_log_entry, &log_entry, &send_func);
+        propose_global(c, log_entry, d, send_func);
     }
 }
 
@@ -974,19 +974,16 @@ global_voter :: send_global(const generalized_paxos::message_p2a& m, daemon* d)
 {
     const uint64_t now = po6::monotonic_time();
 
-    if (m_inner_rate_m2a != m ||
-        m_inner_rate_m2a_timestamp + d->resend_interval() < now)
+    if (m_xmit_inner_m2a.may_transmit(m, now, d))
     {
         generalized_paxos::command c;
         c.type = GLOBAL_VOTER_MESSAGE_2A;
         e::packer(&c.value) << m;
 
-        if (propose_global(c, d))
-        {
-            LOG_IF(INFO, s_debug_mode) << XXX() << m_tg.group << " proposing " << pretty_print_inner(m.v);
-            m_inner_rate_m2a = m;
-            m_inner_rate_m2a_timestamp = now;
-        }
+        uint64_t log_entry;
+        void (daemon::*send_func)(int64_t, paxos_group_id, std::auto_ptr<e::buffer>);
+        m_xmit_inner_m2a.transmit_params(m, now, m_highest_log_entry, &log_entry, &send_func);
+        propose_global(c, log_entry, d, send_func);
     }
 }
 
@@ -995,31 +992,29 @@ global_voter :: send_global(const generalized_paxos::message_p2b& m, daemon* d)
 {
     const uint64_t now = po6::monotonic_time();
 
-    if (m_inner_rate_m2b != m ||
-        m_inner_rate_m2b_timestamp + d->resend_interval() < now)
+    if (m_xmit_inner_m2b.may_transmit(m, now, d))
     {
         generalized_paxos::command c;
         c.type = GLOBAL_VOTER_MESSAGE_2B;
         e::packer(&c.value) << m;
 
-        if (propose_global(c, d))
-        {
-            LOG_IF(INFO, s_debug_mode) << XXX() << m_tg.group << " accepted " << pretty_print_inner(m.v);
-            m_inner_rate_m2b = m;
-            m_inner_rate_m2b_timestamp = now;
-        }
+        uint64_t log_entry;
+        void (daemon::*send_func)(int64_t, paxos_group_id, std::auto_ptr<e::buffer>);
+        m_xmit_inner_m2b.transmit_params(m, now, m_highest_log_entry, &log_entry, &send_func);
+        propose_global(c, log_entry, d, send_func);
     }
 }
 
-bool
-global_voter :: propose_global(const generalized_paxos::command& c, daemon* d)
+void
+global_voter :: propose_global(const generalized_paxos::command& c, uint64_t log_entry,
+                               daemon* d, void (daemon::*send_func)(int64_t, paxos_group_id, std::auto_ptr<e::buffer>))
 {
     const paxos_group* group = d->get_config()->get_group(m_tg.group);
 
-    // XXX failure sensitive
-    if (!group || group->members_sz == 0 || group->members[0] != d->m_us.id)
+    // XXX excessive retransmit
+    if (!group || group->members_sz == 0)
     {
-        return false;
+        return;
     }
 
     for (unsigned i = 0; i < m_dcs_sz; ++i)
@@ -1032,10 +1027,8 @@ global_voter :: propose_global(const generalized_paxos::command& c, daemon* d)
                         + pack_size(c);
         std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
         msg->pack_at(BUSYBEE_HEADER_SIZE) << GV_PROPOSE << tg << c;
-        d->send_when_durable(m_highest_log_entry, m_dcs[i], msg);
+        (d->*send_func)(log_entry, m_dcs[i], msg);
     }
-
-    return true;
 }
 
 uint64_t
@@ -1095,10 +1088,6 @@ global_voter :: tally_votes(const char* prefix, const generalized_paxos::cstruct
             }
         }
     }
-
-    LOG_IF(INFO, s_debug_mode && voted) << XXX() << prefix << " " << committed << "/" << voted << " vote commit";
-    LOG_IF(INFO, s_debug_mode && voted) << XXX() << prefix << " " << aborted << "/" << voted << " vote abort";
-    LOG_IF(INFO, s_debug_mode && voted) << XXX() << prefix << " " << (m_dcs_sz / 2 + 1) << " is a quorum of voters";
 
     if (committed >= m_dcs_sz / 2 + 1)
     {

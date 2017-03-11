@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2016, Robert Escriva, Cornell University
+// Copyright (c) 2015-2017, Robert Escriva, Cornell University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -25,8 +25,8 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-// BusyBee
-#include <busybee_constants.h>
+// po6
+#include <po6/time.h>
 
 // treadstone
 #include <treadstone.h>
@@ -74,8 +74,8 @@ client :: client(const char* host, uint16_t port)
     , m_config_state(0)
     , m_config_data(NULL)
     , m_config_data_sz(0)
-    , m_busybee_mapper(&m_config)
-    , m_busybee(&m_busybee_mapper, 0)
+    , m_busybee_controller(&m_config)
+    , m_busybee(busybee_client::create(&m_busybee_controller))
     , m_next_client_id(1)
     , m_next_server_nonce(1)
     , m_pending()
@@ -89,7 +89,7 @@ client :: client(const char* host, uint16_t port)
         throw std::bad_alloc();
     }
 
-    busybee_returncode rc = m_busybee.set_external_fd(replicant_client_poll_fd(m_coord));
+    busybee_returncode rc = m_busybee->set_external_fd(replicant_client_poll_fd(m_coord));
     assert(rc == BUSYBEE_SUCCESS);
 }
 
@@ -101,8 +101,8 @@ client :: client(const char* conn_str)
     , m_config_state(0)
     , m_config_data(NULL)
     , m_config_data_sz(0)
-    , m_busybee_mapper(&m_config)
-    , m_busybee(&m_busybee_mapper, 0)
+    , m_busybee_controller(&m_config)
+    , m_busybee(busybee_client::create(&m_busybee_controller))
     , m_next_client_id(1)
     , m_next_server_nonce(1)
     , m_pending()
@@ -116,7 +116,7 @@ client :: client(const char* conn_str)
         throw std::bad_alloc();
     }
 
-    busybee_returncode rc = m_busybee.set_external_fd(replicant_client_poll_fd(m_coord));
+    busybee_returncode rc = m_busybee->set_external_fd(replicant_client_poll_fd(m_coord));
     assert(rc == BUSYBEE_SUCCESS);
 }
 
@@ -753,7 +753,7 @@ client :: add_to_returnable(pending* p)
 bool
 client :: send(uint64_t nonce, comm_id id, std::auto_ptr<e::buffer> msg, pending* p)
 {
-    busybee_returncode rc = m_busybee.send(id.get(), msg);
+    busybee_returncode rc = m_busybee->send(id.get(), msg);
 
     if (rc == BUSYBEE_DISRUPTED)
     {
@@ -793,8 +793,7 @@ client :: inner_loop(int timeout, consus_returncode* status)
 {
     uint64_t cid_num;
     std::auto_ptr<e::buffer> msg;
-    m_busybee.set_timeout(timeout);
-    busybee_returncode rc = m_busybee.recv(&cid_num, &msg);
+    busybee_returncode rc = m_busybee->recv(timeout, &cid_num, &msg);
     comm_id id(cid_num);
 
     switch (rc)
@@ -815,8 +814,9 @@ client :: inner_loop(int timeout, consus_returncode* status)
                 return -1;
             }
             return 0;
-        BUSYBEE_ERROR_CASE(POLLFAILED);
-        BUSYBEE_ERROR_CASE(ADDFDFAIL);
+        case BUSYBEE_SEE_ERRNO:
+            ERROR(SEE_ERRNO) << po6::strerror(errno);
+            return -1;
         BUSYBEE_ERROR_CASE(SHUTDOWN);
         default:
             ERROR(INTERNAL) << "internal error: BusyBee unexpectedly returned "
@@ -856,8 +856,7 @@ int64_t
 client :: post_loop(consus_returncode* status)
 {
     uint64_t cid_num;
-    m_busybee.set_timeout(0);
-    busybee_returncode rc = m_busybee.recv_no_msg(&cid_num);
+    busybee_returncode rc = m_busybee->recv_no_msg(0, &cid_num);
 
     switch (rc)
     {
@@ -875,8 +874,9 @@ client :: post_loop(consus_returncode* status)
                 return -1;
             }
             break;
-        BUSYBEE_ERROR_CASE(POLLFAILED);
-        BUSYBEE_ERROR_CASE(ADDFDFAIL);
+        case BUSYBEE_SEE_ERRNO:
+            ERROR(SEE_ERRNO) << po6::strerror(errno);
+            return -1;
         BUSYBEE_ERROR_CASE(SHUTDOWN);
         case BUSYBEE_SUCCESS:
         default:

@@ -48,12 +48,32 @@ paxos_synod :: ~paxos_synod() throw ()
 }
 
 void
-paxos_synod :: init(comm_id us, const paxos_group& pg)
+paxos_synod :: init(comm_id us, const paxos_group& pg, comm_id leader)
 {
     assert(!m_init);
     m_init = true;
     m_us = us;
     m_group = pg;
+
+    // implicit leader
+    ballot implicit_leader(1, leader);
+
+    // setup the acceptor
+    m_acceptor_ballot = implicit_leader;
+
+    // setup the leader
+    if (us == leader)
+    {
+        m_leader_phase = PHASE1;
+        m_leader_ballot = implicit_leader;
+
+        for (unsigned i = 0; i < m_group.members_sz; ++i)
+        {
+            m_promises[i].current_ballot = implicit_leader;
+        }
+
+        set_phase();
+    }
 }
 
 paxos_synod::phase_t

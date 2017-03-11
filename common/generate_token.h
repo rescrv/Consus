@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2016, Robert Escriva, Cornell University
+// Copyright (c) 2017, Robert Escriva
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -25,35 +25,20 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef consus_client_mapper_h_
-#define consus_client_mapper_h_
+#ifndef consus_common_generate_token_h_
+#define consus_common_generate_token_h_
 
-// BusyBee
-#include <busybee_mapper.h>
+// C
+#include <stdint.h>
 
 // consus
 #include "namespace.h"
-#include "client/configuration.h"
 
 BEGIN_CONSUS_NAMESPACE
 
-class mapper : public ::busybee_mapper
-{
-    public:
-        mapper(const configuration* config);
-        ~mapper() throw ();
-
-    public:
-        virtual bool lookup(uint64_t id, po6::net::location* addr);
-
-    private:
-        mapper(const mapper&);
-        mapper& operator = (const mapper&);
-
-    private:
-        const configuration* m_config;
-};
+bool
+generate_token(uint64_t* token);
 
 END_CONSUS_NAMESPACE
 
-#endif // consus_client_mapper_h_
+#endif // consus_common_generate_token_h_

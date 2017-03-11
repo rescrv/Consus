@@ -43,7 +43,7 @@
 #include <e/state_hash_table.h>
 
 // BusyBee
-#include <busybee_mta.h>
+#include <busybee.h>
 
 // Replicant
 #include <replicant.h>
@@ -57,13 +57,13 @@
 #include "common/transaction_group.h"
 #include "common/txman.h"
 #include "txman/configuration.h"
+#include "txman/controller.h"
 #include "txman/durable_log.h"
 #include "txman/global_voter.h"
 #include "txman/kvs_lock_op.h"
 #include "txman/kvs_read.h"
 #include "txman/kvs_write.h"
 #include "txman/local_voter.h"
-#include "txman/mapper.h"
 #include "txman/transaction.h"
 
 BEGIN_CONSUS_NAMESPACE
@@ -100,7 +100,7 @@ class daemon
         typedef e::nwf_hash_map<transaction_group, uint64_t, transaction_group::hash> disposition_map_t;
         typedef std::vector<durable_msg> durable_msg_heap_t;
         typedef std::vector<durable_cb> durable_cb_heap_t;
-        friend class mapper;
+        friend class controller;
         friend class transaction;
         friend class local_voter;
         friend class global_voter;
@@ -139,20 +139,24 @@ class daemon
         kvs_write* create_write(write_map_t::state_reference* sr);
         kvs_lock_op* create_lock_op(lock_op_map_t::state_reference* sr);
 
-    private:
+    public:
         configuration* get_config();
         void debug_dump();
         uint64_t generate_nonce();
         transaction_id generate_txid();
-        uint64_t resend_interval() { return 5 * PO6_SECONDS; }
+        uint64_t resend_interval() { return PO6_SECONDS/4; }
         bool send(comm_id id, std::auto_ptr<e::buffer> msg);
         unsigned send(paxos_group_id g, std::auto_ptr<e::buffer> msg);
         unsigned send(const paxos_group& g, std::auto_ptr<e::buffer> msg);
+        // XXX next two might cause excessive logging; investigate
         void send_when_durable(const std::string& entry, comm_id id, std::auto_ptr<e::buffer> msg);
         void send_when_durable(const std::string& entry, const comm_id* ids, e::buffer** msgs, size_t sz);
         void send_when_durable(int64_t idx, paxos_group_id g, std::auto_ptr<e::buffer> msg);
         void send_when_durable(int64_t idx, comm_id id, std::auto_ptr<e::buffer> msg);
         void send_when_durable(int64_t idx, const comm_id* ids, e::buffer** msgs, size_t sz);
+        void send_if_durable(int64_t idx, paxos_group_id g, std::auto_ptr<e::buffer> msg);
+        void send_if_durable(int64_t idx, comm_id id, std::auto_ptr<e::buffer> msg);
+        void send_if_durable(int64_t idx, const comm_id* ids, e::buffer** msgs, size_t sz);
         void callback_when_durable(const std::string& entry, const transaction_group& tg, uint64_t seqno);
         void durable();
         void pump();
@@ -160,8 +164,8 @@ class daemon
     private:
         txman m_us;
         e::garbage_collector m_gc;
-        mapper m_busybee_mapper;
-        std::auto_ptr<busybee_mta> m_busybee;
+        controller m_busybee_controller;
+        std::auto_ptr<busybee_server> m_busybee;
         std::auto_ptr<coordinator_callback> m_coord_cb;
         std::auto_ptr<coordinator_link> m_coord;
         configuration* m_config;

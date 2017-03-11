@@ -29,7 +29,7 @@
 #include <glog/logging.h>
 
 // BusyBee
-#include <busybee_constants.h>
+#include <busybee.h>
 
 // consus
 #include "common/network_msgtype.h"
@@ -387,15 +387,6 @@ local_voter :: votes()
 bool
 local_voter :: preconditions_for_paxos(daemon* d)
 {
-    uint64_t outcome;
-
-    // XXX failure sensitive; other nodes may expect response
-    if (d->m_dispositions.get(m_tg, &outcome))
-    {
-        m_outcome_in_dispositions = true;
-        return false;
-    }
-
     if (!m_initialized)
     {
         const paxos_group* group = d->get_config()->get_group(m_tg.group);
@@ -409,7 +400,7 @@ local_voter :: preconditions_for_paxos(daemon* d)
 
         for (size_t i = 0; i < m_group.members_sz; ++i)
         {
-            m_votes[i].init(d->m_us.id, m_group);
+            m_votes[i].init(d->m_us.id, m_group, m_group.members[i]);
             m_timestamps[i] = 0;
         }
 
