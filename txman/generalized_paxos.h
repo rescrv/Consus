@@ -184,6 +184,7 @@ class generalized_paxos
 
         // used to decide retransmits/etc
         void all_accepted_commands(std::vector<command>* commands);
+        bool acceptor_seen(abstract_id acceptor, const command& c);
 
     private:
         enum state_t

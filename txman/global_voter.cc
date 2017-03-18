@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2016, Robert Escriva, Cornell University
+// Copyright (c) 2015-2017, Robert Escriva, Cornell University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -758,6 +758,11 @@ global_voter :: work_state_machine(daemon* d)
         {
             for (unsigned i = 0; i < m_dcs_sz; ++i)
             {
+                if (m_global_gp.acceptor_seen(abstract_id(m_dcs[i].get()), cv))
+                {
+                    continue;
+                }
+
                 transaction_group tg(m_tg);
                 tg.group = m_dcs[i];
                 const size_t sz = BUSYBEE_HEADER_SIZE
