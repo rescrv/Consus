@@ -65,6 +65,11 @@ class transmit_limiter
             return m_value != value ||
                    m_last_transmitted + d->resend_interval() < now;
         }
+        void transmit_now(const T& value, uint64_t now)
+        {
+            m_value = value;
+            m_last_transmitted = now;
+        }
         void transmit_params(const T& value, uint64_t now, uint64_t log, uint64_t* durable,
                              void (daemon::**func)(int64_t, paxos_group_id, std::auto_ptr<e::buffer>))
         {

@@ -33,6 +33,7 @@
 
 // consus
 #include "common/network_msgtype.h"
+#include "common/util.h"
 #include "txman/daemon.h"
 #include "txman/local_voter.h"
 #include "txman/log_entry_t.h"
@@ -71,7 +72,9 @@ local_voter :: local_voter(const transaction_group& tg)
     , m_initialized(false)
     , m_group()
     , m_votes()
-    , m_timestamps()
+    , m_xmit_p1a()
+    , m_xmit_p2a()
+    , m_xmit_learn()
     , m_has_preferred_vote(false)
     , m_preferred_vote(0)
     , m_has_outcome(false)
@@ -79,12 +82,6 @@ local_voter :: local_voter(const transaction_group& tg)
     , m_outcome_in_dispositions(false)
 {
     po6::threads::mutex::hold hold(&m_mtx);
-
-    for (unsigned i = 0; i < CONSUS_MAX_REPLICATION_FACTOR; ++i)
-    {
-        m_phases[i] = paxos_synod::PHASE1;
-        m_timestamps[i] = 0;
-    }
 }
 
 local_voter :: ~local_voter() throw ()
@@ -105,7 +102,7 @@ local_voter :: finished()
 }
 
 void
-local_voter :: set_preferred_vote(uint64_t v)
+local_voter :: set_preferred_vote(uint64_t v, daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
 
@@ -113,6 +110,13 @@ local_voter :: set_preferred_vote(uint64_t v)
     {
         m_has_preferred_vote = true;
         m_preferred_vote = v;
+
+        if (m_initialized)
+        {
+            unsigned our_idx = m_group.index(d->m_us.id);
+            assert(our_idx < m_group.members_sz);
+            m_votes[our_idx].propose(m_preferred_vote);
+        }
     }
 }
 
@@ -264,6 +268,11 @@ local_voter :: vote_2b(comm_id id, unsigned idx,
 {
     po6::threads::mutex::hold hold(&m_mtx);
 
+    if (!preconditions_for_paxos(d))
+    {
+        return;
+    }
+
     if (idx >= m_group.members_sz)
     {
         LOG(ERROR) << logid() << " instance[" << idx << "] dropping 2b message with invalid index";
@@ -271,19 +280,7 @@ local_voter :: vote_2b(comm_id id, unsigned idx,
     }
 
     LOG_IF(INFO, s_debug_mode) << logid() << " instance[" << idx << "] received phase 2 response from " << id << " accepting decision to " << value_to_string(p.v) << " lead by " << p.b.leader;
-    paxos_synod::phase_t x = m_votes[idx].phase();
     m_votes[idx].phase2b(id, p);
-
-    if (x != paxos_synod::LEARNED &&
-        m_votes[idx].phase() == paxos_synod::LEARNED)
-    {
-        std::string entry;
-        e::packer(&entry)
-            << LOG_ENTRY_LOCAL_LEARN << m_tg << uint8_t(idx) << m_votes[idx].learned();
-        d->m_log.append(entry.data(), entry.size());
-        LOG_IF(INFO, s_debug_mode) << logid() << " instance[" << idx << "] decided to " << value_to_string(p.v) << "; overall votes are " << votes();
-    }
-
     work_state_machine(d);
 }
 
@@ -291,6 +288,11 @@ void
 local_voter :: vote_learn(unsigned idx, uint64_t v, daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
+
+    if (!preconditions_for_paxos(d))
+    {
+        return;
+    }
 
     if (idx >= m_group.members_sz)
     {
@@ -326,6 +328,12 @@ void
 local_voter :: externally_work_state_machine(daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
+
+    if (!preconditions_for_paxos(d))
+    {
+        return;
+    }
+
     work_state_machine(d);
 }
 
@@ -343,6 +351,46 @@ local_voter :: outcome()
     po6::threads::mutex::hold hold(&m_mtx);
     assert(m_has_outcome);
     return m_outcome;
+}
+
+std::string
+local_voter :: debug_dump()
+{
+    po6::threads::mutex::hold hold(&m_mtx);
+    std::ostringstream ostr;
+    ostr << m_group << "\n";
+
+    for (size_t i = 0; i < m_group.members_sz; ++i)
+    {
+        char buf[16];
+        sprintf(buf, "paxos[%lu] ", i);
+        ostr << prefix_lines(buf, m_votes[i].debug_dump());
+    }
+
+    if (m_has_preferred_vote)
+    {
+        ostr << "prefer to vote " << value_to_string(m_preferred_vote) << "\n";
+    }
+    else
+    {
+        ostr << "no vote preference\n";
+    }
+
+    if (m_has_outcome)
+    {
+        ostr << "outcome " << value_to_string(m_outcome) << "\n";
+    }
+    else
+    {
+        ostr << "no outcome\n";
+    }
+
+    if (m_outcome_in_dispositions)
+    {
+        ostr << "outcome in dispositions\n";
+    }
+
+    return ostr.str();
 }
 
 std::string
@@ -401,7 +449,13 @@ local_voter :: preconditions_for_paxos(daemon* d)
         for (size_t i = 0; i < m_group.members_sz; ++i)
         {
             m_votes[i].init(d->m_us.id, m_group, m_group.members[i]);
-            m_timestamps[i] = 0;
+        }
+
+        if (m_has_preferred_vote)
+        {
+            unsigned our_idx = m_group.index(d->m_us.id);
+            assert(our_idx < m_group.members_sz);
+            m_votes[our_idx].propose(m_preferred_vote);
         }
 
         m_initialized = true;
@@ -413,17 +467,14 @@ local_voter :: preconditions_for_paxos(daemon* d)
 void
 local_voter :: work_state_machine(daemon* d)
 {
-    if (!preconditions_for_paxos(d))
-    {
-        return;
-    }
-
+    assert(preconditions_for_paxos(d));
     unsigned our_idx = m_group.index(d->m_us.id);
     assert(our_idx < m_group.members_sz);
 
     if (m_has_preferred_vote)
     {
-        work_paxos_vote(our_idx, d, m_preferred_vote);
+        m_votes[our_idx].propose(m_preferred_vote);
+        work_paxos_vote(our_idx, d);
     }
 
     for (unsigned i = 1; i < m_group.members_sz; ++i)
@@ -431,13 +482,14 @@ local_voter :: work_state_machine(daemon* d)
         unsigned idx = (our_idx + i) % m_group.members_sz;
 
         // XXX this is not robust if the coordinator totally goes missing
-        if ((!m_has_preferred_vote || m_preferred_vote == CONSUS_VOTE_COMMIT) &&
+        if (!m_has_preferred_vote ||
             d->get_config()->get_state(m_group.members[idx]) == txman_state::ONLINE)
         {
             break;
         }
 
-        work_paxos_vote(idx, d, CONSUS_VOTE_ABORT);
+        m_votes[idx].propose(CONSUS_VOTE_ABORT);
+        work_paxos_vote(idx, d);
     }
 
     unsigned voted = 0;
@@ -483,57 +535,57 @@ local_voter :: work_state_machine(daemon* d)
 }
 
 void
-local_voter :: work_paxos_vote(unsigned idx, daemon* d, uint64_t preference)
+local_voter :: work_paxos_vote(unsigned idx, daemon* d)
 {
+    paxos_synod* ps = &m_votes[idx];
     paxos_synod::ballot b;
     paxos_synod::pvalue p;
-    paxos_synod* ps = &m_votes[idx];
-    std::auto_ptr<e::buffer> msg(e::buffer::create(pack_size(m_tg) + 64));
+    uint64_t L = 0;
+    bool send_p1a = false;
+    bool send_p2a = false;
+    bool send_learn = false;
+    ps->advance(&send_p1a, &b, &send_p2a, &p, &send_learn, &L);
     const uint64_t now = po6::monotonic_time();
 
-    switch (ps->phase())
+    if (send_p1a && m_xmit_p1a.may_transmit(b, now, d))
     {
-        case paxos_synod::PHASE1:
-            ps->phase1(&b);
-            msg->pack_at(BUSYBEE_HEADER_SIZE)
-                << LV_VOTE_1A << m_tg << uint8_t(idx) << b;
+        m_xmit_p1a.transmit_now(b, now);
+        const size_t sz = BUSYBEE_HEADER_SIZE
+                        + pack_size(LV_VOTE_1A)
+                        + pack_size(m_tg)
+                        + sizeof(uint8_t)
+                        + pack_size(b);
+        std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
+        msg->pack_at(BUSYBEE_HEADER_SIZE)
+            << LV_VOTE_1A << m_tg << uint8_t(idx) << b;
+        d->send(m_group, msg);
+    }
 
-            if (m_phases[idx] != paxos_synod::PHASE1 ||
-                m_timestamps[idx] + d->resend_interval() < now)
-            {
-                d->send(m_group, msg);
-                m_phases[idx] = paxos_synod::PHASE1;
-                m_timestamps[idx] = now;
-            }
+    if (send_p2a && m_xmit_p2a.may_transmit(p, now, d))
+    {
+        m_xmit_p2a.transmit_now(p, now);
+        const size_t sz = BUSYBEE_HEADER_SIZE
+                        + pack_size(LV_VOTE_2A)
+                        + pack_size(m_tg)
+                        + sizeof(uint8_t)
+                        + pack_size(p);
+        std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
+        msg->pack_at(BUSYBEE_HEADER_SIZE)
+            << LV_VOTE_2A << m_tg << uint8_t(idx) << p;
+        d->send(m_group, msg);
+    }
 
-            break;
-        case paxos_synod::PHASE2:
-            ps->phase2(&p, preference);
-            msg->pack_at(BUSYBEE_HEADER_SIZE)
-                << LV_VOTE_2A << m_tg << uint8_t(idx) << p;
-
-            if (m_phases[idx] != paxos_synod::PHASE2 ||
-                m_timestamps[idx] + d->resend_interval() < now)
-            {
-                d->send(m_group, msg);
-                m_phases[idx] = paxos_synod::PHASE2;
-                m_timestamps[idx] = now;
-            }
-
-            break;
-        case paxos_synod::LEARNED:
-            if (m_phases[idx] != paxos_synod::LEARNED ||
-                m_timestamps[idx] + d->resend_interval() < now)
-            {
-                msg->pack_at(BUSYBEE_HEADER_SIZE)
-                    << LV_VOTE_LEARN << m_tg << uint8_t(idx) << m_votes[idx].learned();
-                d->send(m_group, msg);
-                m_phases[idx] = paxos_synod::LEARNED;
-                m_timestamps[idx] = now;
-            }
-
-            break;
-        default:
-            ::abort();
+    if (send_learn && m_xmit_learn.may_transmit(L, now, d))
+    {
+        m_xmit_learn.transmit_now(L, now);
+        const size_t sz = BUSYBEE_HEADER_SIZE
+                        + pack_size(LV_VOTE_LEARN)
+                        + pack_size(m_tg)
+                        + sizeof(uint8_t)
+                        + sizeof(uint64_t);
+        std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
+        msg->pack_at(BUSYBEE_HEADER_SIZE)
+            << LV_VOTE_LEARN << m_tg << uint8_t(idx) << L;
+        d->send(m_group, msg);
     }
 }

@@ -87,6 +87,10 @@ class paxos_synod
 
     public:
         void init(comm_id us, const paxos_group& pg, comm_id leader);
+        void propose(uint64_t value);
+        void advance(bool* send_p1a, ballot* p1a,
+                     bool* send_p2a, pvalue* p2a,
+                     bool* send_learn, uint64_t* learned);
         phase_t phase();
         void phase1(ballot* b);
         void phase1a(const ballot& b, ballot* a, pvalue* p);
@@ -96,6 +100,7 @@ class paxos_synod
         void phase2b(comm_id m, const pvalue& p);
         void force_learn(uint64_t value);
         uint64_t learned();
+        std::string debug_dump();
 
     private:
         struct promise
@@ -116,6 +121,8 @@ class paxos_synod
         bool m_init;
         comm_id m_us;
         paxos_group m_group;
+
+        uint64_t m_proposed;
 
         ballot m_acceptor_ballot;
         pvalue m_acceptor_pvalue;

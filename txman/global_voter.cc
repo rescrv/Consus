@@ -472,6 +472,12 @@ global_voter :: unvoted_data_centers(paxos_group_id* dcs, size_t* dcs_sz)
 }
 
 std::string
+global_voter :: debug_dump()
+{
+    return "XXX";
+}
+
+std::string
 global_voter :: logid()
 {
     return transaction_group::log(m_tg) + " global voter: ";

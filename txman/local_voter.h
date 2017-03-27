@@ -50,7 +50,7 @@ class local_voter
         bool finished();
 
     public:
-        void set_preferred_vote(uint64_t v);
+        void set_preferred_vote(uint64_t v, daemon* d);
         void vote_1a(comm_id id, unsigned idx, const paxos_synod::ballot& b, daemon* d);
         void vote_1b(comm_id id, unsigned idx,
                      const paxos_synod::ballot& b,
@@ -62,13 +62,14 @@ class local_voter
         void externally_work_state_machine(daemon* d);
         bool outcome(uint64_t* v);
         uint64_t outcome();
+        std::string debug_dump();
+        std::string logid();
 
     private:
-        std::string logid();
         std::string votes();
         bool preconditions_for_paxos(daemon* d);
         void work_state_machine(daemon* d);
-        void work_paxos_vote(unsigned idx, daemon* d, uint64_t preferred);
+        void work_paxos_vote(unsigned idx, daemon* d);
 
     private:
         const transaction_group m_tg;
@@ -76,8 +77,9 @@ class local_voter
         bool m_initialized;
         paxos_group m_group;
         paxos_synod m_votes[CONSUS_MAX_REPLICATION_FACTOR];
-        paxos_synod::phase_t m_phases[CONSUS_MAX_REPLICATION_FACTOR];
-        uint64_t m_timestamps[CONSUS_MAX_REPLICATION_FACTOR];
+        transmit_limiter<paxos_synod::ballot, daemon> m_xmit_p1a;
+        transmit_limiter<paxos_synod::pvalue, daemon> m_xmit_p2a;
+        transmit_limiter<uint64_t, daemon> m_xmit_learn;
         bool m_has_preferred_vote;
         uint64_t m_preferred_vote;
         bool m_has_outcome;

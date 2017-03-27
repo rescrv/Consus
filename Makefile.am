@@ -155,6 +155,7 @@ consus_transaction_manager_SOURCES += common/transaction_group.cc
 consus_transaction_manager_SOURCES += common/txman.cc
 consus_transaction_manager_SOURCES += common/txman_configuration.cc
 consus_transaction_manager_SOURCES += common/txman_state.cc
+consus_transaction_manager_SOURCES += common/util.cc
 consus_transaction_manager_SOURCES += txman/configuration.cc
 consus_transaction_manager_SOURCES += txman/controller.cc
 consus_transaction_manager_SOURCES += txman/daemon.cc

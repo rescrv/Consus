@@ -74,11 +74,12 @@ class global_voter
         void externally_work_state_machine(daemon* d);
         bool outcome(uint64_t* v);
         void unvoted_data_centers(paxos_group_id* dcs, size_t* dcs_sz);
+        std::string debug_dump();
+        std::string logid();
 
     private:
         struct data_center_comparator;
         struct global_comparator;
-        std::string logid();
         std::string XXX() { return logid() + " XXX: "; }
         std::string pretty_print_outer(const generalized_paxos::cstruct& c);
         std::string pretty_print_outer(const generalized_paxos::command& c);

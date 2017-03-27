@@ -1220,7 +1220,7 @@ transaction :: work_state_machine_local_commit_vote(daemon* d)
     local_voter* lv = d->m_local_voters.get_or_create_state(m_tg, &lvsr);
     assert(lv);
     lv->set_preferred_vote(m_prefer_to_commit && m_ops.back().type == LOG_ENTRY_TX_PREPARE
-                           ? CONSUS_VOTE_COMMIT : CONSUS_VOTE_ABORT);
+                           ? CONSUS_VOTE_COMMIT : CONSUS_VOTE_ABORT, d);
     uint64_t outcome;
 
     if (!lv->outcome(&outcome))
@@ -1468,7 +1468,7 @@ transaction :: avoid_commit_if_possible(daemon* d)
     daemon::local_voter_map_t::state_reference lvsr;
     local_voter* lv = d->m_local_voters.get_or_create_state(m_tg, &lvsr);
     assert(lv);
-    lv->set_preferred_vote(CONSUS_VOTE_ABORT);
+    lv->set_preferred_vote(CONSUS_VOTE_ABORT, d);
 }
 
 bool

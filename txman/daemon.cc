@@ -63,6 +63,7 @@
 #include "common/coordinator_returncode.h"
 #include "common/generate_token.h"
 #include "common/macros.h"
+#include "common/util.h"
 #include "txman/daemon.h"
 #include "txman/log_entry_t.h"
 
@@ -129,30 +130,6 @@ daemon :: coordinator_callback :: coordinator_callback(daemon* _d)
 
 daemon :: coordinator_callback :: ~coordinator_callback() throw ()
 {
-}
-
-static std::vector<std::string>
-split_by_newlines(std::string s)
-{
-    std::vector<std::string> v;
-
-    while (!s.empty())
-    {
-        size_t idx = s.find_first_of('\n');
-
-        if (idx == std::string::npos)
-        {
-            v.push_back(s);
-            s = "";
-        }
-        else
-        {
-            v.push_back(s.substr(0, idx));
-            s = s.substr(idx + 1, s.size());
-        }
-    }
-
-    return v;
 }
 
 bool
@@ -417,6 +394,11 @@ daemon :: run(bool background,
     for (size_t i = 0; i < m_threads.size(); ++i)
     {
         m_threads[i]->join();
+    }
+
+    if (s_debug_mode)
+    {
+        debug_dump();
     }
 
     m_log.close();
@@ -894,7 +876,7 @@ daemon :: process_wound(comm_id, std::auto_ptr<e::buffer> msg, e::unpacker up)
         local_voter_map_t::state_reference lvsr;
         local_voter* lv = m_local_voters.get_or_create_state(tg, &lvsr);
         assert(lv);
-        lv->set_preferred_vote(CONSUS_VOTE_ABORT);
+        lv->set_preferred_vote(CONSUS_VOTE_ABORT, this);
         lv->externally_work_state_machine(this);
         transaction_map_t::state_reference tsr;
         transaction* xact = m_transactions.get_state(tg, &tsr);
@@ -1264,10 +1246,35 @@ daemon :: debug_dump()
         }
     }
 
-    // XXX
-#if 0
     LOG(INFO) << "--------------------------------- Local Voters ---------------------------------";
+
+    for (local_voter_map_t::iterator it(&m_local_voters); it.valid(); ++it)
+    {
+        local_voter* lv = *it;
+        std::string debug = lv->debug_dump();
+        std::vector<std::string> lines = split_by_newlines(debug);
+
+        for (size_t i = 0; i < lines.size(); ++i)
+        {
+            LOG(INFO) << lv->logid() << " " << lines[i];
+        }
+    }
+
     LOG(INFO) << "--------------------------------- Global Voters --------------------------------";
+
+    for (global_voter_map_t::iterator it(&m_global_voters); it.valid(); ++it)
+    {
+        global_voter* gv = *it;
+        std::string debug = gv->debug_dump();
+        std::vector<std::string> lines = split_by_newlines(debug);
+
+        for (size_t i = 0; i < lines.size(); ++i)
+        {
+            LOG(INFO) << gv->logid() << " " << lines[i];
+        }
+    }
+
+#if 0
     LOG(INFO) << "--------------------------------- Dispositions ---------------------------------";
     LOG(INFO) << "-------------------------------- Read Operations -------------------------------";
     LOG(INFO) << "------------------------------- Write Operations -------------------------------";

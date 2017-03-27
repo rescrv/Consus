@@ -25,6 +25,9 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+// STL
+#include <sstream>
+
 // consus
 #include "txman/paxos_synod.h"
 
@@ -34,6 +37,7 @@ paxos_synod :: paxos_synod()
     : m_init(false)
     , m_us()
     , m_group()
+    , m_proposed(0)
     , m_acceptor_ballot()
     , m_acceptor_pvalue()
     , m_leader_phase()
@@ -73,6 +77,46 @@ paxos_synod :: init(comm_id us, const paxos_group& pg, comm_id leader)
         }
 
         set_phase();
+    }
+}
+
+void
+paxos_synod :: propose(uint64_t value)
+{
+    assert(!m_proposed || m_proposed == value);
+    m_proposed = value;
+}
+
+void
+paxos_synod :: advance(bool* send_p1a, ballot* p1a,
+                       bool* send_p2a, pvalue* p2a,
+                       bool* send_learn, uint64_t* _learned)
+{
+    *send_p1a = false;
+    *send_p2a = false;
+    *send_learn = false;
+
+    switch (phase())
+    {
+        case PHASE1:
+            if (!m_proposed)
+            {
+                return;
+            }
+
+            *send_p1a = true;
+            phase1(p1a);
+            break;
+        case PHASE2:
+            *send_p2a = true;
+            phase2(p2a, m_proposed);
+            break;
+        case LEARNED:
+            *send_learn = true;
+            *_learned = learned();
+            break;
+        default:
+            abort();
     }
 }
 
@@ -125,8 +169,7 @@ paxos_synod :: phase1b(comm_id m, const ballot& a, const pvalue& p)
     unsigned idx = m_group.index(m);
 
     if (idx < m_group.members_sz &&
-        m_leader_phase >= PHASE1 &&
-        m_leader_ballot == a)
+        m_promises[idx].current_ballot <= a)
     {
         m_promises[idx].current_ballot = a;
         m_promises[idx].current_pvalue = p;
@@ -185,8 +228,7 @@ paxos_synod :: phase2b(comm_id m, const pvalue& p)
     unsigned idx = m_group.index(m);
 
     if (idx < m_group.members_sz &&
-        m_leader_phase == PHASE2 &&
-        m_leader_ballot == p.b)
+        m_promises[idx].current_ballot == p.b)
     {
         m_promises[idx].current_pvalue = p;
     }
@@ -210,9 +252,73 @@ paxos_synod :: learned()
     return m_value;
 }
 
+std::string
+paxos_synod :: debug_dump()
+{
+    if (!m_init)
+    {
+        return "uninitialized paxos instance";
+    }
+
+    std::ostringstream ostr;
+    ostr << m_us << " in " << m_group << "\n";
+
+    if (m_proposed)
+    {
+        ostr << "proposed " << m_proposed << "\n";
+    }
+    else
+    {
+        ostr << "no value proposed\n";
+    }
+
+    ostr << "acceptor " << m_acceptor_ballot << "\n";
+    ostr << "acceptor " << m_acceptor_pvalue << "\n";
+
+    switch (m_leader_phase)
+    {
+        case PHASE1:
+            ostr << "phase 1\n";
+            break;
+        case PHASE2:
+            ostr << "phase 2\n";
+            break;
+        case LEARNED:
+            ostr << "learned\n";
+            break;
+        default:
+            ostr << "phase unknown\n";
+            break;
+    }
+
+    ostr << "leader " << m_leader_ballot << "\n";
+    ostr << "leader " << m_leader_pvalue << "\n";
+
+    for (size_t i = 0; i < m_group.members_sz; ++i)
+    {
+        ostr << "promise[" << i << "] " << m_promises[i].current_ballot << " " << m_promises[i].current_pvalue << "\n";
+    }
+
+    if (m_value)
+    {
+        ostr << "learned " << m_value << "\n";
+    }
+    else
+    {
+        ostr << "no value learned\n";
+    }
+
+    return ostr.str();
+}
+
 void
 paxos_synod :: set_phase()
 {
+    if (m_leader_phase == LEARNED)
+    {
+        return;
+    }
+
     for (size_t i = 0; i < m_group.members_sz; ++i)
     {
         if (m_promises[i].current_ballot > m_leader_ballot)
