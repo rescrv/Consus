@@ -873,11 +873,17 @@ daemon :: process_wound(comm_id, std::auto_ptr<e::buffer> msg, e::unpacker up)
 
     if (get_config()->is_member(tg.group, m_us.id))
     {
+        // wound the local voter
         local_voter_map_t::state_reference lvsr;
         local_voter* lv = m_local_voters.get_or_create_state(tg, &lvsr);
         assert(lv);
-        lv->set_preferred_vote(CONSUS_VOTE_ABORT, this);
-        lv->externally_work_state_machine(this);
+        lv->wound(this);
+        // wound the global voter
+        global_voter_map_t::state_reference gvsr;
+        global_voter* gv = m_global_voters.get_or_create_state(tg, &gvsr);
+        assert(gv);
+        // XXX gv->wound(this);
+        // work the transaction
         transaction_map_t::state_reference tsr;
         transaction* xact = m_transactions.get_state(tg, &tsr);
 

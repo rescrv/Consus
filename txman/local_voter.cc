@@ -83,6 +83,7 @@ local_voter :: local_voter(const transaction_group& tg)
     , m_has_outcome(false)
     , m_outcome(0)
     , m_outcome_in_dispositions(false)
+    , m_wounded(false)
 {
     po6::threads::mutex::hold hold(&m_mtx);
 }
@@ -328,6 +329,21 @@ local_voter :: vote_learn(unsigned idx, uint64_t v, daemon* d)
 }
 
 void
+local_voter :: wound(daemon* d)
+{
+    set_preferred_vote(CONSUS_VOTE_ABORT, d);
+    po6::threads::mutex::hold hold(&m_mtx);
+    m_wounded = true;
+
+    if (!preconditions_for_paxos(d))
+    {
+        return;
+    }
+
+    work_state_machine(d);
+}
+
+void
 local_voter :: externally_work_state_machine(daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
@@ -485,7 +501,8 @@ local_voter :: work_state_machine(daemon* d)
         unsigned idx = (our_idx + i) % m_group.members_sz;
 
         // XXX this is not robust if the coordinator totally goes missing
-        if (!m_has_preferred_vote ||
+        // XXX this may have leader thrashing; think about it
+        if (!m_has_preferred_vote && !m_wounded &&
             d->get_config()->get_state(m_group.members[idx]) == txman_state::ONLINE)
         {
             break;

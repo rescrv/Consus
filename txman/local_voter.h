@@ -59,6 +59,7 @@ class local_voter
         void vote_2a(comm_id id, unsigned idx, const paxos_synod::pvalue& p, daemon* d);
         void vote_2b(comm_id id, unsigned idx, const paxos_synod::pvalue& p, daemon* d);
         void vote_learn(unsigned idx, uint64_t v, daemon* d);
+        void wound(daemon* d);
         void externally_work_state_machine(daemon* d);
         bool outcome(uint64_t* v);
         uint64_t outcome();
@@ -85,6 +86,7 @@ class local_voter
         bool m_has_outcome;
         uint64_t m_outcome;
         bool m_outcome_in_dispositions;
+        bool m_wounded;
 
     private:
         local_voter(const local_voter&);
