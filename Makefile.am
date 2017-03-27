@@ -117,6 +117,7 @@ noinst_HEADERS += common/transmit_limiter.h
 noinst_HEADERS += common/txman_configuration.h
 noinst_HEADERS += common/txman.h
 noinst_HEADERS += common/txman_state.h
+noinst_HEADERS += common/util.h
 
 ################################################################################
 ############################## Transaction Manager #############################
