@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2016, Robert Escriva, Cornell University
+// Copyright (c) 2015-2017, Robert Escriva, Cornell University
 // All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -75,8 +75,10 @@ paxos_synod :: init(comm_id us, const paxos_group& pg, comm_id leader)
         {
             m_promises[i].current_ballot = implicit_leader;
         }
-
-        set_phase();
+    }
+    else
+    {
+        m_leader_ballot = ballot(1, m_us);
     }
 }
 
@@ -96,55 +98,98 @@ paxos_synod :: advance(bool* send_p1a, ballot* p1a,
     *send_p2a = false;
     *send_learn = false;
 
-    switch (phase())
+    // once learned, always learned
+    // Paxos will uphold this, but why waste resources running the protocol
+    // again?
+    if (m_leader_phase == LEARNED)
     {
-        case PHASE1:
-            if (!m_proposed)
+        *send_learn = true;
+        *_learned = learned();
+        return;
+    }
+
+    for (size_t i = 0; i < m_group.members_sz; ++i)
+    {
+        if (m_promises[i].current_ballot > m_leader_ballot)
+        {
+            m_leader_ballot.number = m_promises[i].current_ballot.number + 1;
+        }
+    }
+
+    if (!m_proposed)
+    {
+        return;
+    }
+
+    if (m_leader_phase == PHASE1)
+    {
+        unsigned accepted = 0;
+
+        for (size_t i = 0; i < m_group.members_sz; ++i)
+        {
+            if (m_leader_ballot != ballot() &&
+                m_promises[i].current_ballot == m_leader_ballot)
             {
-                return;
+                ++accepted;
+            }
+        }
+
+        if (accepted >= m_group.quorum())
+        {
+            m_leader_phase = PHASE2;
+            m_leader_pvalue = pvalue();
+
+            for (unsigned i = 0; i < m_group.members_sz; ++i)
+            {
+                m_leader_pvalue = std::max(m_leader_pvalue, m_promises[i].current_pvalue);
             }
 
+            if (m_leader_pvalue == pvalue())
+            {
+                m_leader_pvalue = pvalue(m_leader_ballot, m_proposed);
+            }
+            else
+            {
+                m_leader_pvalue.b = m_leader_ballot;
+            }
+        }
+
+        if (accepted < m_group.members_sz)
+        {
             *send_p1a = true;
-            phase1(p1a);
-            break;
-        case PHASE2:
-            *send_p2a = true;
-            phase2(p2a, m_proposed);
-            break;
-        case LEARNED:
+            *p1a = m_leader_ballot;
+        }
+    }
+
+    if (m_leader_phase == PHASE2)
+    {
+        unsigned accepted = 0;
+
+        for (size_t i = 0; i < m_group.members_sz; ++i)
+        {
+            if (m_promises[i].current_ballot == m_leader_ballot &&
+                m_promises[i].current_pvalue == m_leader_pvalue &&
+                m_leader_pvalue.b == m_leader_ballot)
+            {
+                ++accepted;
+            }
+        }
+
+        if (accepted >= m_group.quorum())
+        {
+            m_leader_phase = LEARNED;
+            m_value = m_leader_pvalue.v;
             *send_learn = true;
-            *_learned = learned();
-            break;
-        default:
-            abort();
-    }
-}
+            *_learned = m_value;
+        }
 
-paxos_synod::phase_t
-paxos_synod :: phase()
-{
-    assert(m_init);
-    return m_leader_phase;
-}
-
-void
-paxos_synod :: phase1(ballot* b)
-{
-    assert(m_init);
-    assert(m_leader_phase == PHASE1);
-    uint64_t number = m_leader_ballot.number;
-
-    for (unsigned i = 0; i < m_group.members_sz; ++i)
-    {
-        number = std::max(number, m_promises[i].current_ballot.number);
+        if (accepted < m_group.members_sz)
+        {
+            *send_p2a = true;
+            *p2a = m_leader_pvalue;
+        }
     }
 
-    if (m_leader_ballot.leader != m_us)
-    {
-        ++number;
-    }
-
-    *b = m_leader_ballot = ballot(number, m_us);
 }
 
 void
@@ -159,7 +204,6 @@ paxos_synod :: phase1a(const ballot& b, ballot* a, pvalue* p)
 
     *a = m_acceptor_ballot;
     *p = m_acceptor_pvalue;
-    set_phase();
 }
 
 void
@@ -168,39 +212,16 @@ paxos_synod :: phase1b(comm_id m, const ballot& a, const pvalue& p)
     assert(m_init);
     unsigned idx = m_group.index(m);
 
-    if (idx < m_group.members_sz &&
-        m_promises[idx].current_ballot <= a)
+    if (idx >= m_group.members_sz)
+    {
+        return;
+    }
+
+    if (m_promises[idx].current_ballot <= a)
     {
         m_promises[idx].current_ballot = a;
         m_promises[idx].current_pvalue = p;
     }
-
-    set_phase();
-}
-
-void
-paxos_synod :: phase2(pvalue* p, uint64_t preferred_value)
-{
-    assert(m_init);
-    assert(m_leader_phase == PHASE2);
-    *p = pvalue();
-
-    for (unsigned i = 0; i < m_group.members_sz; ++i)
-    {
-        *p = std::max(*p, m_promises[i].current_pvalue);
-    }
-
-    if (*p == pvalue())
-    {
-        *p = pvalue(m_leader_ballot, preferred_value);
-    }
-    else
-    {
-        *p = pvalue(m_leader_ballot, p->v);
-    }
-
-    m_leader_pvalue = *p;
-    set_phase();
 }
 
 void
@@ -217,8 +238,6 @@ paxos_synod :: phase2a(const pvalue& p, bool* a)
     {
         *a = false;
     }
-
-    set_phase();
 }
 
 void
@@ -227,13 +246,19 @@ paxos_synod :: phase2b(comm_id m, const pvalue& p)
     assert(m_init);
     unsigned idx = m_group.index(m);
 
-    if (idx < m_group.members_sz &&
-        m_promises[idx].current_ballot == p.b)
+    if (idx >= m_group.members_sz)
+    {
+        return;
+    }
+
+    if (m_promises[idx].current_ballot == p.b)
     {
         m_promises[idx].current_pvalue = p;
     }
-
-    set_phase();
+    else if (m_promises[idx].current_ballot < p.b)
+    {
+        m_leader_phase = PHASE1;
+    }
 }
 
 void
@@ -242,6 +267,13 @@ paxos_synod :: force_learn(uint64_t value)
     assert(m_init);
     m_leader_phase = LEARNED;
     m_value = value;
+}
+
+bool
+paxos_synod :: has_learned()
+{
+    assert(m_init);
+    return m_leader_phase == LEARNED;
 }
 
 uint64_t
@@ -309,64 +341,6 @@ paxos_synod :: debug_dump()
     }
 
     return ostr.str();
-}
-
-void
-paxos_synod :: set_phase()
-{
-    if (m_leader_phase == LEARNED)
-    {
-        return;
-    }
-
-    for (size_t i = 0; i < m_group.members_sz; ++i)
-    {
-        if (m_promises[i].current_ballot > m_leader_ballot)
-        {
-            m_leader_phase = PHASE1;
-            return;
-        }
-    }
-
-    if (m_leader_phase == PHASE1)
-    {
-        unsigned accepted = 0;
-
-        for (size_t i = 0; i < m_group.members_sz; ++i)
-        {
-            if (m_leader_ballot != ballot() &&
-                m_promises[i].current_ballot == m_leader_ballot)
-            {
-                ++accepted;
-            }
-        }
-
-        if (accepted >= m_group.quorum())
-        {
-            m_leader_phase = PHASE2;
-        }
-    }
-
-    if (m_leader_phase == PHASE2)
-    {
-        unsigned accepted = 0;
-
-        for (size_t i = 0; i < m_group.members_sz; ++i)
-        {
-            if (m_promises[i].current_ballot == m_leader_ballot &&
-                m_promises[i].current_pvalue == m_leader_pvalue &&
-                m_leader_pvalue.b == m_leader_ballot)
-            {
-                ++accepted;
-            }
-        }
-
-        if (accepted >= m_group.quorum())
-        {
-            m_leader_phase = LEARNED;
-            m_value = m_leader_pvalue.v;
-        }
-    }
 }
 
 paxos_synod :: ballot :: ballot()

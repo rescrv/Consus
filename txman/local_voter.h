@@ -78,9 +78,9 @@ class local_voter
         bool m_initialized;
         paxos_group m_group;
         paxos_synod m_votes[CONSUS_MAX_REPLICATION_FACTOR];
-        transmit_limiter<paxos_synod::ballot, daemon> m_xmit_p1a;
-        transmit_limiter<paxos_synod::pvalue, daemon> m_xmit_p2a;
-        transmit_limiter<uint64_t, daemon> m_xmit_learn;
+        transmit_limiter<paxos_synod::ballot, daemon> m_xmit_p1a[CONSUS_MAX_REPLICATION_FACTOR];
+        transmit_limiter<paxos_synod::pvalue, daemon> m_xmit_p2a[CONSUS_MAX_REPLICATION_FACTOR];
+        transmit_limiter<uint64_t, daemon> m_xmit_learn[CONSUS_MAX_REPLICATION_FACTOR];
         bool m_has_preferred_vote;
         uint64_t m_preferred_vote;
         bool m_has_outcome;

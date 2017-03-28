@@ -306,7 +306,7 @@ local_voter :: vote_learn(unsigned idx, uint64_t v, daemon* d)
 
     bool log = false;
 
-    if (m_votes[idx].phase() == paxos_synod::LEARNED &&
+    if (m_votes[idx].has_learned() &&
         m_votes[idx].learned() != v)
     {
         // this should never happen; let's catch if it does so we can make sure
@@ -314,7 +314,7 @@ local_voter :: vote_learn(unsigned idx, uint64_t v, daemon* d)
         LOG(ERROR) << logid() << " instance[" << idx << "] learned inconsistent values: "
                    << value_to_string(m_votes[idx].learned()) << " vs " << value_to_string(v);
     }
-    else if (m_votes[idx].phase() != paxos_synod::LEARNED)
+    else if (!m_votes[idx].has_learned())
     {
         std::string entry;
         e::packer(&entry)
@@ -425,7 +425,7 @@ local_voter :: votes()
 
     for (size_t i = 0; i < m_group.members_sz; ++i)
     {
-        if (m_votes[i].phase() == paxos_synod::LEARNED)
+        if (m_votes[i].has_learned())
         {
             uint64_t v = m_votes[i].learned();
 
@@ -517,7 +517,7 @@ local_voter :: work_state_machine(daemon* d)
 
     for (size_t i = 0; i < m_group.members_sz; ++i)
     {
-        if (m_votes[i].phase() == paxos_synod::LEARNED)
+        if (m_votes[i].has_learned())
         {
             ++voted;
 
@@ -536,16 +536,16 @@ local_voter :: work_state_machine(daemon* d)
     unsigned aborted = voted - committed;
     assert(aborted < m_group.quorum() || committed < m_group.quorum());
 
-    if (aborted >= m_group.quorum())
-    {
-        m_has_outcome = true;
-        m_outcome = CONSUS_VOTE_ABORT;
-    }
-
     if (committed >= m_group.quorum())
     {
         m_has_outcome = true;
         m_outcome = CONSUS_VOTE_COMMIT;
+    }
+    else if (aborted >= m_group.quorum() ||
+             m_group.members_sz - voted + committed < m_group.quorum())
+    {
+        m_has_outcome = true;
+        m_outcome = CONSUS_VOTE_ABORT;
     }
 
     if (d->m_dispositions.has(m_tg))
@@ -567,9 +567,9 @@ local_voter :: work_paxos_vote(unsigned idx, daemon* d)
     ps->advance(&send_p1a, &b, &send_p2a, &p, &send_learn, &L);
     const uint64_t now = po6::monotonic_time();
 
-    if (send_p1a && m_xmit_p1a.may_transmit(b, now, d))
+    if (send_p1a && m_xmit_p1a[idx].may_transmit(b, now, d))
     {
-        m_xmit_p1a.transmit_now(b, now);
+        m_xmit_p1a[idx].transmit_now(b, now);
         const size_t sz = BUSYBEE_HEADER_SIZE
                         + pack_size(LV_VOTE_1A)
                         + pack_size(m_tg)
@@ -581,9 +581,9 @@ local_voter :: work_paxos_vote(unsigned idx, daemon* d)
         d->send(m_group, msg);
     }
 
-    if (send_p2a && m_xmit_p2a.may_transmit(p, now, d))
+    if (send_p2a && m_xmit_p2a[idx].may_transmit(p, now, d))
     {
-        m_xmit_p2a.transmit_now(p, now);
+        m_xmit_p2a[idx].transmit_now(p, now);
         const size_t sz = BUSYBEE_HEADER_SIZE
                         + pack_size(LV_VOTE_2A)
                         + pack_size(m_tg)
@@ -595,9 +595,9 @@ local_voter :: work_paxos_vote(unsigned idx, daemon* d)
         d->send(m_group, msg);
     }
 
-    if (send_learn && m_xmit_learn.may_transmit(L, now, d))
+    if (send_learn && m_xmit_learn[idx].may_transmit(L, now, d))
     {
-        m_xmit_learn.transmit_now(L, now);
+        m_xmit_learn[idx].transmit_now(L, now);
         const size_t sz = BUSYBEE_HEADER_SIZE
                         + pack_size(LV_VOTE_LEARN)
                         + pack_size(m_tg)

@@ -91,14 +91,12 @@ class paxos_synod
         void advance(bool* send_p1a, ballot* p1a,
                      bool* send_p2a, pvalue* p2a,
                      bool* send_learn, uint64_t* learned);
-        phase_t phase();
-        void phase1(ballot* b);
         void phase1a(const ballot& b, ballot* a, pvalue* p);
         void phase1b(comm_id m, const ballot& a, const pvalue& p);
-        void phase2(pvalue* p, uint64_t preferred_value);
         void phase2a(const pvalue& p, bool* a);
         void phase2b(comm_id m, const pvalue& p);
         void force_learn(uint64_t value);
+        bool has_learned();
         uint64_t learned();
         std::string debug_dump();
 
@@ -115,7 +113,6 @@ class paxos_synod
                 promise(const promise&);
                 promise& operator = (const promise&);
         };
-        void set_phase();
 
     private:
         bool m_init;
