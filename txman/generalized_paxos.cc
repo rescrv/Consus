@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <map>
 #include <set>
+#include <sstream>
 
 // e
 #include <e/serialization.h>
@@ -369,6 +370,70 @@ generalized_paxos :: acceptor_seen(abstract_id acceptor, const command& c)
     return std::find(m_accepted[idx].v.commands.begin(),
                      m_accepted[idx].v.commands.end(),
                      c) != m_accepted[idx].v.commands.end();
+}
+
+std::string
+generalized_paxos :: debug_dump(e::compat::function<std::string(cstruct)> pcst,
+                                e::compat::function<std::string(command)> pcmd)
+{
+    if (!m_init)
+    {
+        return "uninitialized";
+    }
+
+    std::ostringstream ostr;
+
+    switch (m_state)
+    {
+        case PARTICIPATING: ostr << "participating\n"; break;
+        case LEADING_PHASE1: ostr << "leading phase1\n"; break;
+        case LEADING_PHASE2: ostr << "leading phase2\n"; break;
+        default: ostr << "corrupted state\n"; break;
+    }
+
+    ostr << m_us.get() << " in [";
+
+    for (size_t i = 0; i < m_acceptors.size(); ++i)
+    {
+        if (i > 0)
+        {
+            ostr << ", ";
+        }
+
+        ostr << m_acceptors[i].get();
+    }
+
+    ostr << "]\n";
+
+    for (size_t i = 0; i < m_proposed.size(); ++i)
+    {
+        ostr << "proposal[" << i << "] " << pcmd(m_proposed[i]) << "\n";
+    }
+
+    ostr << "acceptor ballot " << m_acceptor_ballot << "\n";
+    ostr << "acceptor value " << pcst(m_acceptor_value) << "\n";
+    ostr << "accepted by " << m_acceptor_value_src << "\n";
+
+    ostr << "leader ballot " << m_leader_ballot << "\n";
+    ostr << "leader value " << m_leader_value << "\n";
+
+    for (size_t i = 0; i < m_promises.size(); ++i)
+    {
+        ostr << "leader promise[" << i << "].ballot " << m_promises[i].b << "\n";
+        ostr << "leader promise[" << i << "].acceptor " << m_promises[i].acceptor.get() << "\n";
+        ostr << "leader promise[" << i << "].vb " << m_promises[i].vb << "\n";
+        ostr << "leader promise[" << i << "].v " << m_promises[i].v << "\n";
+    }
+
+    for (size_t i = 0; i < m_accepted.size(); ++i)
+    {
+        ostr << "accepted[" << i << "].b " << m_promises[i].b << "\n";
+        ostr << "accepted[" << i << "].acceptor " << m_promises[i].acceptor.get() << "\n";
+        ostr << "accepted[" << i << "].v " << m_promises[i].v << "\n";
+    }
+
+    ostr << "learned " << pcst(learned()) << "\n";
+    return ostr.str();
 }
 
 size_t

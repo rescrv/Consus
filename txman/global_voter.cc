@@ -38,12 +38,35 @@
 #include <busybee.h>
 
 // consus
+#include "common/util.h"
 #include "txman/daemon.h"
 #include "txman/global_voter.h"
 
 using consus::global_voter;
 
 extern bool s_debug_mode;
+
+static const char*
+value_to_string(uint64_t v)
+{
+    const char* value = NULL;
+
+    if (v == CONSUS_VOTE_COMMIT)
+    {
+        value = "COMMIT";
+    }
+    else if (v == CONSUS_VOTE_ABORT)
+    {
+        value = "ABORT";
+    }
+    else
+    {
+        value = "???";
+    }
+
+    assert(value);
+    return value;
+}
 
 namespace
 {
@@ -474,7 +497,40 @@ global_voter :: unvoted_data_centers(paxos_group_id* dcs, size_t* dcs_sz)
 std::string
 global_voter :: debug_dump()
 {
-    return "XXX";
+    po6::threads::mutex::hold hold(&m_mtx);
+    std::ostringstream ostr;
+    std::string tmp;
+    ostr << "data center " << (m_data_center_init ? "" : "un") << "initialized\n";
+    ostr << "global " << (m_global_init ? "" : "un") << "initialized\n";
+    ostr << "local dc outcome " << value_to_string(m_local_vote) << "\n";
+    tmp = m_data_center_gp.debug_dump(e::compat::bind(&global_voter::pretty_print_outer_cstruct, this, e::compat::placeholders::_1),
+                                      e::compat::bind(&global_voter::pretty_print_outer_command, this, e::compat::placeholders::_1));
+    ostr << prefix_lines("data center paxos: ", tmp);
+
+    for (size_t i = 0; i < m_global_exec.size(); ++i)
+    {
+        ostr << "command[" << i << "] " << pretty_print_outer(m_global_exec[i]) << "\n";
+    }
+
+    tmp = m_global_gp.debug_dump(e::compat::bind(&global_voter::pretty_print_inner_cstruct, this, e::compat::placeholders::_1),
+                                 e::compat::bind(&global_voter::pretty_print_inner_command, this, e::compat::placeholders::_1));
+    ostr << prefix_lines("global paxos: ", tmp);
+
+    if (m_has_outcome)
+    {
+        ostr << "outcome " << value_to_string(m_outcome) << "\n";
+    }
+    else
+    {
+        ostr << "no outcome\n";
+    }
+
+    if (m_outcome_in_dispositions)
+    {
+        ostr << "outcome in dispositions\n";
+    }
+
+    return ostr.str();
 }
 
 std::string
@@ -484,7 +540,7 @@ global_voter :: logid()
 }
 
 std::string
-global_voter :: pretty_print_outer(const generalized_paxos::cstruct& v)
+global_voter :: pretty_print_outer_cstruct(const generalized_paxos::cstruct& v)
 {
     std::ostringstream ostr;
     ostr << "[";
@@ -504,7 +560,7 @@ global_voter :: pretty_print_outer(const generalized_paxos::cstruct& v)
 }
 
 std::string
-global_voter :: pretty_print_outer(const generalized_paxos::command& c)
+global_voter :: pretty_print_outer_command(const generalized_paxos::command& c)
 {
     std::ostringstream ostr;
     generalized_paxos::command inner_c;
@@ -592,7 +648,7 @@ global_voter :: pretty_print_outer(const generalized_paxos::command& c)
 }
 
 std::string
-global_voter :: pretty_print_inner(const generalized_paxos::cstruct& v)
+global_voter :: pretty_print_inner_cstruct(const generalized_paxos::cstruct& v)
 {
     std::ostringstream ostr;
     ostr << "[";
@@ -612,7 +668,7 @@ global_voter :: pretty_print_inner(const generalized_paxos::cstruct& v)
 }
 
 std::string
-global_voter :: pretty_print_inner(const generalized_paxos::command& c)
+global_voter :: pretty_print_inner_command(const generalized_paxos::command& c)
 {
     // It's tempting to clean this up to print paxos_group_id or something even
     // more user friendly.  Instead, this method prints member index because
@@ -805,13 +861,13 @@ global_voter :: work_state_machine(daemon* d)
     {
         const generalized_paxos::command& c(dc_learned.commands[i]);
 
-        if (m_global_exec.find(c) != m_global_exec.end())
+        if (std::find(m_global_exec.begin(), m_global_exec.end(), c) != m_global_exec.end())
         {
             continue;
         }
 
         LOG_IF(INFO, s_debug_mode) << logid() << "executing " << pretty_print_outer(c);
-        m_global_exec.insert(c);
+        m_global_exec.push_back(c);
         ++executed;
         generalized_paxos::command inner_c;
         generalized_paxos::message_p1a inner_m1a;
@@ -1105,6 +1161,7 @@ global_voter :: tally_votes(const char* prefix, const generalized_paxos::cstruct
         return CONSUS_VOTE_COMMIT;
     }
 
+    // XXX what aobut an even split here?
     if (aborted >= m_dcs_sz / 2 + 1)
     {
         return CONSUS_VOTE_ABORT;

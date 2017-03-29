@@ -186,6 +186,8 @@ class generalized_paxos
         void all_accepted_commands(std::vector<command>* commands);
         bool acceptor_seen(abstract_id acceptor, const command& c);
 
+        std::string debug_dump(e::compat::function<std::string(cstruct)> pcst, e::compat::function<std::string(command)> pcmd);
+
     private:
         enum state_t
         {

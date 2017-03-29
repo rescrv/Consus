@@ -71,6 +71,7 @@ class global_voter
         bool process_p1b(const generalized_paxos::message_p1b& m, daemon* d);
         bool process_p2a(comm_id id, const generalized_paxos::message_p2a& m, daemon* d);
         bool process_p2b(const generalized_paxos::message_p2b& m, daemon* d);
+        void wound(daemon*) {}
         void externally_work_state_machine(daemon* d);
         bool outcome(uint64_t* v);
         void unvoted_data_centers(paxos_group_id* dcs, size_t* dcs_sz);
@@ -81,10 +82,14 @@ class global_voter
         struct data_center_comparator;
         struct global_comparator;
         std::string XXX() { return logid() + " XXX: "; }
-        std::string pretty_print_outer(const generalized_paxos::cstruct& c);
-        std::string pretty_print_outer(const generalized_paxos::command& c);
-        std::string pretty_print_inner(const generalized_paxos::cstruct& c);
-        std::string pretty_print_inner(const generalized_paxos::command& c);
+        std::string pretty_print_outer(const generalized_paxos::cstruct& c) { return pretty_print_outer_cstruct(c); }
+        std::string pretty_print_outer(const generalized_paxos::command& c) { return pretty_print_outer_command(c); }
+        std::string pretty_print_inner(const generalized_paxos::cstruct& c) { return pretty_print_inner_cstruct(c); }
+        std::string pretty_print_inner(const generalized_paxos::command& c) { return pretty_print_inner_command(c); }
+        std::string pretty_print_outer_cstruct(const generalized_paxos::cstruct& c);
+        std::string pretty_print_outer_command(const generalized_paxos::command& c);
+        std::string pretty_print_inner_cstruct(const generalized_paxos::cstruct& c);
+        std::string pretty_print_inner_command(const generalized_paxos::command& c);
         bool preconditions_for_data_center_paxos(daemon* d);
         bool preconditions_for_global_paxos(daemon* d);
         unsigned member() const { return std::find(m_dcs, m_dcs + m_dcs_sz, m_tg.group) - m_dcs; }
@@ -124,7 +129,7 @@ class global_voter
         size_t m_dcs_sz;
         const std::auto_ptr<global_comparator> m_global_cmp;
         generalized_paxos m_global_gp;
-        std::set<generalized_paxos::command> m_global_exec;
+        std::vector<generalized_paxos::command> m_global_exec;
         // outcome
         bool m_has_outcome;
         uint64_t m_outcome;
