@@ -410,26 +410,26 @@ generalized_paxos :: debug_dump(e::compat::function<std::string(cstruct)> pcst,
         ostr << "proposal[" << i << "] " << pcmd(m_proposed[i]) << "\n";
     }
 
-    ostr << "acceptor ballot " << m_acceptor_ballot << "\n";
+    ostr << "acceptor " << m_acceptor_ballot << "\n";
     ostr << "acceptor value " << pcst(m_acceptor_value) << "\n";
     ostr << "accepted by " << m_acceptor_value_src << "\n";
 
-    ostr << "leader ballot " << m_leader_ballot << "\n";
-    ostr << "leader value " << m_leader_value << "\n";
+    ostr << "leader " << m_leader_ballot << "\n";
+    ostr << "leader value " << pcst(m_leader_value) << "\n";
 
     for (size_t i = 0; i < m_promises.size(); ++i)
     {
         ostr << "leader promise[" << i << "].ballot " << m_promises[i].b << "\n";
         ostr << "leader promise[" << i << "].acceptor " << m_promises[i].acceptor.get() << "\n";
         ostr << "leader promise[" << i << "].vb " << m_promises[i].vb << "\n";
-        ostr << "leader promise[" << i << "].v " << m_promises[i].v << "\n";
+        ostr << "leader promise[" << i << "].v " << pcst(m_promises[i].v) << "\n";
     }
 
     for (size_t i = 0; i < m_accepted.size(); ++i)
     {
-        ostr << "accepted[" << i << "].b " << m_promises[i].b << "\n";
-        ostr << "accepted[" << i << "].acceptor " << m_promises[i].acceptor.get() << "\n";
-        ostr << "accepted[" << i << "].v " << m_promises[i].v << "\n";
+        ostr << "accepted[" << i << "].b " << m_accepted[i].b << "\n";
+        ostr << "accepted[" << i << "].acceptor " << m_accepted[i].acceptor.get() << "\n";
+        ostr << "accepted[" << i << "].v " << pcst(m_accepted[i].v) << "\n";
     }
 
     ostr << "learned " << pcst(learned()) << "\n";
@@ -1129,7 +1129,18 @@ generalized_paxos :: ballot :: compare(const ballot& rhs) const
         return 1;
     }
 
-    return 0;
+    if (type == rhs.type)
+    {
+        return 0;
+    }
+    else if (type == FAST)
+    {
+        return -1;
+    }
+    else
+    {
+        return 1;
+    }
 }
 
 generalized_paxos::ballot&
