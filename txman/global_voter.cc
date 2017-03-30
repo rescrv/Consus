@@ -413,11 +413,6 @@ global_voter :: process_p2b(const generalized_paxos::message_p2b& m, daemon* d)
 
     if (processed)
     {
-        std::string entry;
-        e::packer(&entry)
-            << LOG_ENTRY_GLOBAL_VOTE_2B << m_tg << m;
-        int64_t x = d->m_log.append(entry.data(), entry.size());
-        m_highest_log_entry = std::max(m_highest_log_entry, x);
         LOG_IF(INFO, s_debug_mode)
             << logid() << comm_id(m.acceptor.get())
             << " accepted state machine input "
