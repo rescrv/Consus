@@ -872,6 +872,13 @@ transaction :: commit_record(e::slice commit_record, std::auto_ptr<e::buffer> _b
         }
     }
 
+    const uint64_t now = po6::monotonic_time();
+
+    for (size_t i = 0; i < m_dcs_sz; ++i)
+    {
+        m_dcs_timestamps[i] = now;
+    }
+
     if (up.error())
     {
         ::abort(); // XXX
