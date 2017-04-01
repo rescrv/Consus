@@ -1732,7 +1732,7 @@ daemon :: pump()
 
     while (true)
     {
-        sleep(PO6_MILLIS * 250);
+        po6::sleep(PO6_MILLIS * 250);
 
         if (e::atomic::increment_32_nobarrier(&s_interrupts, 0) > 0)
         {
