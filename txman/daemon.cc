@@ -342,6 +342,7 @@ daemon :: run(bool background,
 
     m_busybee.reset(busybee_server::create(&m_busybee_controller, id, bind_to, &m_gc));
     m_durable_thread.start();
+    m_pumping_thread.start();
 
     for (size_t i = 0; i < threads; ++i)
     {
@@ -402,6 +403,7 @@ daemon :: run(bool background,
     }
 
     m_log.close();
+    m_pumping_thread.join();
     m_durable_thread.join();
     LOG(ERROR) << "consus is gracefully shutting down";
     return EXIT_SUCCESS;

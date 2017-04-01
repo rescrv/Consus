@@ -345,6 +345,7 @@ daemon :: daemon()
     , m_repl_wr(&m_gc)
     , m_migrations(&m_gc)
     , m_migrate_thread(new migration_bgthread(this))
+    , m_pumping_thread(po6::threads::make_obj_func(&daemon::pump, this))
 {
 }
 
@@ -457,6 +458,7 @@ daemon :: run(bool background,
     }
 
     m_migrate_thread->start();
+    m_pumping_thread.start();
 
     while (e::atomic::increment_32_nobarrier(&s_interrupts, 0) == 0)
     {
@@ -496,6 +498,7 @@ daemon :: run(bool background,
     }
 
     e::atomic::increment_32_nobarrier(&s_interrupts, 1);
+    m_pumping_thread.join();
     m_migrate_thread->shutdown();
     m_busybee->shutdown();
 

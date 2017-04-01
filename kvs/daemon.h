@@ -148,6 +148,9 @@ class daemon
         migrator_map_t m_migrations;
         std::auto_ptr<migration_bgthread> m_migrate_thread;
 
+        // state machine pumping
+        po6::threads::thread m_pumping_thread;
+
     private:
         daemon(const daemon&);
         daemon& operator = (const daemon&);
