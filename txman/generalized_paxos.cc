@@ -184,6 +184,8 @@ generalized_paxos :: advance(bool may_attempt_leadership,
                     propose(m_promises[i].v.commands[c]);
                 }
             }
+
+            std::sort(m_proposed.begin(), m_proposed.end());
         }
     }
 
@@ -201,7 +203,6 @@ generalized_paxos :: advance(bool may_attempt_leadership,
 
         *send_m2 = true;
         *m2 = message_p2a(m_leader_ballot, m_leader_value);
-        // XXX p2a ourselves
     }
 
     if (m_acceptor_ballot.type == ballot::FAST)
@@ -240,7 +241,15 @@ generalized_paxos :: process_p1a(const message_p1a& m, bool* send, message_p1b* 
 
     if (m.b > m_leader_ballot && m_state > PARTICIPATING)
     {
-        m_state = PARTICIPATING;
+        if (m.b.leader == m_us)
+        {
+            m_leader_ballot = m.b;
+            m_state = LEADING_PHASE1;
+        }
+        else
+        {
+            m_state = PARTICIPATING;
+        }
     }
 
     if (m.b >= m_acceptor_ballot)

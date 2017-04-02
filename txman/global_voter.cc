@@ -850,7 +850,13 @@ global_voter :: work_state_machine(daemon* d)
         m_dc_prev_learned = dc_learned;
     }
 
-    size_t executed = 0;
+    // the value of "lead" *must* be deterministicly derived from something such
+    // that each invocation of "advance" below will be the same for each replica
+    // within a data center.  What you're trying to avoid is a situation where
+    // two replicas' leadership advances differently causing the two inner state
+    // machines to diverge.  It's important that they be a deterministic outcome
+    // of the outer state machine, and not circumstances of execution.
+    bool lead = m_tg.group == m_tg.txid.group;//XXX failure sensitive
 
     for (size_t i = 0; i < dc_learned.commands.size(); ++i)
     {
@@ -863,7 +869,6 @@ global_voter :: work_state_machine(daemon* d)
 
         LOG_IF(INFO, s_debug_mode) << logid() << "executing " << pretty_print_outer(c);
         m_global_exec.push_back(c);
-        ++executed;
         generalized_paxos::command inner_c;
         generalized_paxos::message_p1a inner_m1a;
         generalized_paxos::message_p1b inner_m1b;
@@ -952,45 +957,38 @@ global_voter :: work_state_machine(daemon* d)
             default:
                 break;
         }
-    }
 
-    bool lead = m_tg.group == m_tg.txid.group;//XXX failure sensitive
+        send_m1 = send_m2 = send_m3 = false;
+        m_global_gp.advance(lead,
+                            &send_m1, &m1,
+                            &send_m2, &m2,
+                            &send_m3, &m3);
 
-    if (executed == 0 && !lead)
-    {
-        return;
-    }
-
-    send_m1 = send_m2 = send_m3 = false;
-    m_global_gp.advance(lead,
-                        &send_m1, &m1,
-                        &send_m2, &m2,
-                        &send_m3, &m3);
-
-    if (send_m1)
-    {
-        send_global(m1, d);
-    }
-
-    if (send_m2)
-    {
-        send_global(m2, d);
-    }
-
-    if (send_m3 && tally_votes("acceptor", m3.v) != 0)
-    {
-        send_global(m3, d);
-    }
-
-    if (!m_has_outcome)
-    {
-        generalized_paxos::cstruct votes = m_global_gp.learned();
-        uint64_t outcome = tally_votes("learned", votes);
-
-        if (outcome != 0)
+        if (send_m1)
         {
-            m_has_outcome = true;
-            m_outcome = outcome;
+            send_global(m1, d);
+        }
+
+        if (send_m2)
+        {
+            send_global(m2, d);
+        }
+
+        if (send_m3 && tally_votes("acceptor", m3.v) != 0)
+        {
+            send_global(m3, d);
+        }
+
+        if (!m_has_outcome)
+        {
+            generalized_paxos::cstruct votes = m_global_gp.learned();
+            uint64_t outcome = tally_votes("learned", votes);
+
+            if (outcome != 0)
+            {
+                m_has_outcome = true;
+                m_outcome = outcome;
+            }
         }
     }
 }
