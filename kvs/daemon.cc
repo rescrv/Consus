@@ -1209,10 +1209,14 @@ daemon :: pump()
     }
 
     LOG(INFO) << "pumping thread started";
+    e::garbage_collector::thread_state ts;
+    m_gc.register_thread(&ts);
 
     while (true)
     {
+        m_gc.offline(&ts);
         po6::sleep(PO6_MILLIS * 250);
+        m_gc.online(&ts);
 
         if (e::atomic::increment_32_nobarrier(&s_interrupts, 0) > 0)
         {
@@ -1242,7 +1246,10 @@ daemon :: pump()
             migrator* m = *it;
             m->externally_work_state_machine(this);
         }
+
+        m_gc.quiescent_state(&ts);
     }
 
+    m_gc.deregister_thread(&ts);
     LOG(INFO) << "pumping thread shutting down";
 }

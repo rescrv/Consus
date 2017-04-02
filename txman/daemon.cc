@@ -1659,10 +1659,14 @@ daemon :: durable()
 
     LOG(INFO) << "durability monitor started";
     int64_t x = -1;
+    e::garbage_collector::thread_state ts;
+    m_gc.register_thread(&ts);
 
     while (true)
     {
+        m_gc.offline(&ts);
         x = m_log.wait(x);
+        m_gc.online(&ts);
 
         if (m_log.error() != 0)
         {
@@ -1716,8 +1720,11 @@ daemon :: durable()
                 xact->callback_durable(cbs[i].seqno, this);
             }
         }
+
+        m_gc.quiescent_state(&ts);
     }
 
+    m_gc.deregister_thread(&ts);
     LOG(INFO) << "durability monitor shutting down";
 }
 
@@ -1734,10 +1741,14 @@ daemon :: pump()
     }
 
     LOG(INFO) << "pumping thread started";
+    e::garbage_collector::thread_state ts;
+    m_gc.register_thread(&ts);
 
     while (true)
     {
+        m_gc.offline(&ts);
         po6::sleep(PO6_MILLIS * 250);
+        m_gc.online(&ts);
 
         if (e::atomic::increment_32_nobarrier(&s_interrupts, 0) > 0)
         {
@@ -1761,7 +1772,10 @@ daemon :: pump()
             global_voter* gv = *it;
             gv->externally_work_state_machine(this);
         }
+
+        m_gc.quiescent_state(&ts);
     }
 
+    m_gc.deregister_thread(&ts);
     LOG(INFO) << "pumping thread shutting down";
 }
