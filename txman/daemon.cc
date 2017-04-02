@@ -1666,6 +1666,11 @@ daemon :: durable()
 
         if (m_log.error() != 0)
         {
+            if (e::atomic::increment_32_nobarrier(&s_interrupts, 0) > 0)
+            {
+                break;
+            }
+
             LOG(ERROR) << "durable log: " << po6::strerror(m_log.error());
             e::atomic::increment_32_nobarrier(&s_interrupts, 2);
             break;
