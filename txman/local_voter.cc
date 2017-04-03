@@ -502,8 +502,9 @@ local_voter :: work_state_machine(daemon* d)
 
         // XXX this is not robust if the coordinator totally goes missing
         // XXX this may have leader thrashing; think about it
-        if (d->get_config()->get_state(m_group.members[idx]) == txman_state::ONLINE ||
-            (!m_has_preferred_vote && !m_wounded))
+        if (!m_wounded &&
+            (d->get_config()->get_state(m_group.members[idx]) == txman_state::ONLINE ||
+             !m_has_preferred_vote))
         {
             break;
         }
