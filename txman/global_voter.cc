@@ -168,6 +168,7 @@ global_voter :: global_voter(const transaction_group& tg)
     for (unsigned i = 0; i < CONSUS_MAX_REPLICATION_FACTOR; ++i)
     {
         m_dcs_timestamps[i] = 0;
+        m_outcomes[i] = 0;
     }
 }
 
