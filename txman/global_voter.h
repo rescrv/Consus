@@ -66,6 +66,7 @@ class global_voter
     public:
         bool initialized();
         void init(uint64_t vote, const paxos_group_id* dcs, size_t dcs_sz, daemon* d);
+        bool report(unsigned index, uint64_t outcomes[CONSUS_MAX_REPLICATION_FACTOR], daemon* d);
         bool propose(const generalized_paxos::command& c, daemon* d);
         bool process_p1a(comm_id id, const generalized_paxos::message_p1a& m, daemon* d);
         bool process_p1b(const generalized_paxos::message_p1b& m, daemon* d);
@@ -114,7 +115,8 @@ class global_voter
         int64_t m_highest_log_entry;
         generalized_paxos::cstruct m_dc_prev_learned;
         // data center paxos: rate limiting
-        transmit_limiter<generalized_paxos::command, daemon> m_xmit_vote;
+        transmit_limiter<uint64_t, daemon> m_xmit_vote;
+        transmit_limiter<uint64_t, daemon> m_xmit_proposals[CONSUS_MAX_REPLICATION_FACTOR];
         transmit_limiter<generalized_paxos::message_p1a, daemon> m_xmit_outer_m1a;
         transmit_limiter<generalized_paxos::message_p2a, daemon> m_xmit_outer_m2a;
         transmit_limiter<generalized_paxos::message_p2b, daemon> m_xmit_outer_m2b;
@@ -124,6 +126,7 @@ class global_voter
         transmit_limiter<generalized_paxos::message_p2b, daemon> m_xmit_inner_m2b;
         // global paxos
         uint64_t m_local_vote;
+        uint64_t m_outcomes[CONSUS_MAX_REPLICATION_FACTOR];
         paxos_group_id m_dcs[CONSUS_MAX_REPLICATION_FACTOR];
         uint64_t m_dcs_timestamps[CONSUS_MAX_REPLICATION_FACTOR];
         size_t m_dcs_sz;

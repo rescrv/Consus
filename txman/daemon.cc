@@ -57,6 +57,7 @@
 #include <e/daemon.h>
 #include <e/daemonize.h>
 #include <e/identity.h>
+#include <e/serialization.h>
 #include <e/strescape.h>
 
 // consus
@@ -540,6 +541,9 @@ daemon :: loop(size_t thread)
             case COMMIT_RECORD:
                 process_commit_record(id, msg, up);
                 break;
+            case GV_OUTCOME:
+                process_gv_outcome(id, msg, up);
+                break;
             case GV_PROPOSE:
                 process_gv_propose(id, msg, up);
                 break;
@@ -918,6 +922,31 @@ daemon :: process_commit_record(comm_id, std::auto_ptr<e::buffer> msg, e::unpack
     transaction* xact = m_transactions.get_or_create_state(tg, &tsr);
     assert(xact);
     xact->commit_record(commit_record, msg, this);
+}
+
+void
+daemon :: process_gv_outcome(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
+{
+    transaction_group tg;
+    uint64_t index;
+    uint64_t outcomes[CONSUS_MAX_REPLICATION_FACTOR];
+    up = up >> tg >> e::unpack_varint(index) >> e::unpack_array<uint64_t>(outcomes, CONSUS_MAX_REPLICATION_FACTOR);
+    CHECK_UNPACK(GV_OUTCOME, up);
+
+    global_voter_map_t::state_reference gvsr;
+    global_voter* gv = m_global_voters.get_or_create_state(tg, &gvsr);
+    assert(gv);
+
+    if (gv->report(index, outcomes, this))
+    {
+        transaction_map_t::state_reference tsr;
+        transaction* xact = m_transactions.get_state(tg, &tsr);
+
+        if (xact)
+        {
+            xact->externally_work_state_machine(this);
+        }
+    }
 }
 
 void
@@ -1701,22 +1730,11 @@ daemon :: pump()
             break;
         }
 
+        // a transaction implicitly pumps a local or global voter
         for (transaction_map_t::iterator it(&m_transactions); it.valid(); ++it)
         {
             transaction* xact = *it;
             xact->externally_work_state_machine(this);
-        }
-
-        for (local_voter_map_t::iterator it(&m_local_voters); it.valid(); ++it)
-        {
-            local_voter* lv = *it;
-            lv->externally_work_state_machine(this);
-        }
-
-        for (global_voter_map_t::iterator it(&m_global_voters); it.valid(); ++it)
-        {
-            global_voter* gv = *it;
-            gv->externally_work_state_machine(this);
         }
 
         m_gc.quiescent_state(&ts);

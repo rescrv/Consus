@@ -365,22 +365,6 @@ generalized_paxos :: all_accepted_commands(std::vector<command>* commands)
     commands->resize(it - commands->begin());
 }
 
-bool
-generalized_paxos :: acceptor_seen(abstract_id acceptor, const command& c)
-{
-    assert(m_init);
-    size_t idx = index_of(acceptor);
-
-    if (idx >= m_acceptors.size())
-    {
-        return false;
-    }
-
-    return std::find(m_accepted[idx].v.commands.begin(),
-                     m_accepted[idx].v.commands.end(),
-                     c) != m_accepted[idx].v.commands.end();
-}
-
 std::string
 generalized_paxos :: debug_dump(e::compat::function<std::string(cstruct)> pcst,
                                 e::compat::function<std::string(command)> pcmd)

@@ -1288,7 +1288,7 @@ transaction :: work_state_machine_global_commit_vote(daemon* d)
     if (!gv->initialized())
     {
         daemon::local_voter_map_t::state_reference lvsr;
-        local_voter* lv = d->m_local_voters.get_or_create_state(m_tg, &lvsr);
+        local_voter* lv = d->m_local_voters.get_state(m_tg, &lvsr);
         assert(lv);
         uint64_t v = lv->outcome();
         gv->init(v, m_dcs, m_dcs_sz, d);

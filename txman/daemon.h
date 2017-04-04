@@ -124,6 +124,7 @@ class daemon
         void process_lv_vote_2b(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_lv_vote_learn(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_commit_record(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_gv_outcome(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_gv_propose(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_gv_vote_1a(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_gv_vote_1b(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);

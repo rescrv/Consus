@@ -50,50 +50,90 @@ template <typename T, class daemon>
 class transmit_limiter
 {
     public:
-        transmit_limiter()
-            : m_last_transmitted(0)
-            , m_log_durable_seqno(0)
-            , m_value()
-        {
-        }
-        ~transmit_limiter() throw () {};
+        transmit_limiter();
+        ~transmit_limiter() throw ();
 
     public:
         const T& value() const { return m_value; }
-        bool may_transmit(const T& value, uint64_t now, daemon* d)
-        {
-            return m_value != value ||
-                   m_last_transmitted + d->resend_interval() < now;
-        }
-        void transmit_now(const T& value, uint64_t now)
-        {
-            m_value = value;
-            m_last_transmitted = now;
-        }
-        void transmit_params(const T& value, uint64_t now, uint64_t log, uint64_t* durable,
-                             void (daemon::**func)(int64_t, paxos_group_id, std::auto_ptr<e::buffer>))
-        {
-            if (m_value != value)
-            {
-                m_value = value;
-                m_log_durable_seqno = log;
-                *durable = log;
-                *func = &daemon::send_when_durable;
-            }
-            else
-            {
-                *durable = m_log_durable_seqno;
-                *func = &daemon::send_if_durable;
-            }
-
-            m_last_transmitted = now;
-        }
+        void skip_transmissions(unsigned skip) { m_skip_transmissions = skip; }
+        bool may_transmit(const T& value, uint64_t now, daemon* d);
+        void transmit_now(const T& value, uint64_t now);
+        void transmit_now(const T& value, uint64_t now, uint64_t log, uint64_t* durable,
+                          void (daemon::**func)(int64_t, paxos_group_id, std::auto_ptr<e::buffer>));
 
     private:
         uint64_t m_last_transmitted;
         uint64_t m_log_durable_seqno;
+        unsigned m_skip_transmissions;
+        unsigned m_skip_countdown;
         T m_value;
 };
+
+template <typename T, class daemon>
+transmit_limiter<T, daemon> :: transmit_limiter()
+    : m_last_transmitted(0)
+    , m_log_durable_seqno(0)
+    , m_skip_transmissions(0)
+    , m_skip_countdown(0)
+    , m_value()
+{
+}
+
+template <typename T, class daemon>
+transmit_limiter<T, daemon> :: ~transmit_limiter() throw ()
+{
+}
+
+template <typename T, class daemon>
+bool
+transmit_limiter<T, daemon> :: may_transmit(const T& value, uint64_t now, daemon* d)
+{
+    if (m_value != value)
+    {
+        m_skip_countdown = m_skip_transmissions;
+    }
+
+    bool may = m_value != value ||
+               m_last_transmitted + d->resend_interval() < now;
+
+    if (may && m_skip_countdown > 0)
+    {
+        --m_skip_countdown;
+        transmit_now(value, now);
+        return false;
+    }
+
+    return may;
+}
+
+template <typename T, class daemon>
+void
+transmit_limiter<T, daemon> :: transmit_now(const T& value, uint64_t now)
+{
+    m_value = value;
+    m_last_transmitted = now;
+}
+
+template <typename T, class daemon>
+void
+transmit_limiter<T, daemon> :: transmit_now(const T& value, uint64_t now, uint64_t log, uint64_t* durable,
+                                            void (daemon::**func)(int64_t, paxos_group_id, std::auto_ptr<e::buffer>))
+{
+    if (m_value != value)
+    {
+        m_value = value;
+        m_log_durable_seqno = log;
+        *durable = log;
+        *func = &daemon::send_when_durable;
+    }
+    else
+    {
+        *durable = m_log_durable_seqno;
+        *func = &daemon::send_if_durable;
+    }
+
+    m_last_transmitted = now;
+}
 
 END_CONSUS_NAMESPACE
 

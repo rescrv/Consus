@@ -62,6 +62,7 @@ enum network_msgtype
 
     COMMIT_RECORD   = 7505,
 
+    GV_OUTCOME      = 7611,
     GV_PROPOSE      = 7606,
     GV_VOTE_1A      = 7607,
     GV_VOTE_1B      = 7608,
