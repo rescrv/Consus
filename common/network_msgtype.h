@@ -44,10 +44,6 @@ enum network_msgtype
 {
     CLIENT_RESPONSE = 7423,
 
-    UNSAFE_READ     = 7422,
-    UNSAFE_WRITE    = 7421,
-    UNSAFE_LOCK_OP  = 7420,
-
     TXMAN_BEGIN     = 7424,
     TXMAN_READ      = 7425,
     TXMAN_WRITE     = 7426,

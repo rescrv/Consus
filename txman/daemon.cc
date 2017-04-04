@@ -498,15 +498,6 @@ daemon :: loop(size_t thread)
 
         switch (mt)
         {
-            case UNSAFE_READ:
-                process_unsafe_read(id, msg, up);
-                break;
-            case UNSAFE_WRITE:
-                process_unsafe_write(id, msg, up);
-                break;
-            case UNSAFE_LOCK_OP:
-                process_unsafe_lock_op(id, msg, up);
-                break;
             case TXMAN_BEGIN:
                 process_begin(id, msg, up);
                 break;
@@ -598,115 +589,6 @@ daemon :: loop(size_t thread)
 
     m_gc.deregister_thread(&ts);
     LOG(INFO) << "network thread shutting down";
-}
-
-void
-daemon :: process_unsafe_read(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
-{
-    uint64_t client_nonce;
-    e::slice table;
-    e::slice key;
-    up = up >> e::unpack_varint(client_nonce) >> table >> key;
-    CHECK_UNPACK(UNSAFE_READ, up);
-    read_map_t::state_reference sr;
-    kvs_read* kv = create_read(&sr);
-    kv->callback_client(id, client_nonce);
-    kv->read(table, key, UINT64_MAX, this);
-}
-
-consus::kvs_read*
-daemon :: create_read(read_map_t::state_reference* sr)
-{
-    while (true)
-    {
-        uint64_t kv_nonce = generate_nonce();
-
-        if (kv_nonce == 0)
-        {
-            continue;
-        }
-
-        kvs_read* kv = m_readers.create_state(kv_nonce, sr);
-
-        if (kv)
-        {
-            return kv;
-        }
-    }
-}
-
-void
-daemon :: process_unsafe_write(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
-{
-    uint64_t client_nonce;
-    uint8_t flags;
-    e::slice table;
-    e::slice key;
-    e::slice value;
-    up = up >> e::unpack_varint(client_nonce) >> flags >> table >> key >> value;
-    CHECK_UNPACK(UNSAFE_WRITE, up);
-    write_map_t::state_reference sr;
-    kvs_write* kv = create_write(&sr);
-    kv->callback_client(id, client_nonce);
-    const uint64_t timestamp = po6::wallclock_time();
-    kv->write(flags, table, key, timestamp, value, this);
-}
-
-consus::kvs_write*
-daemon :: create_write(write_map_t::state_reference* sr)
-{
-    while (true)
-    {
-        uint64_t kv_nonce = generate_nonce();
-
-        if (kv_nonce == 0)
-        {
-            continue;
-        }
-
-        kvs_write* kv = m_writers.create_state(kv_nonce, sr);
-
-        if (kv)
-        {
-            return kv;
-        }
-    }
-}
-
-void
-daemon :: process_unsafe_lock_op(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
-{
-    uint64_t client_nonce;
-    e::slice table;
-    e::slice key;
-    lock_op op;
-    up = up >> e::unpack_varint(client_nonce) >> table >> key >> op;
-    CHECK_UNPACK(UNSAFE_LOCK_OP, up);
-    lock_op_map_t::state_reference sr;
-    kvs_lock_op* kv = create_lock_op(&sr);
-    kv->callback_client(id, client_nonce);
-    kv->doit(op, table, key, transaction_group(), this);
-}
-
-consus::kvs_lock_op*
-daemon :: create_lock_op(lock_op_map_t::state_reference* sr)
-{
-    while (true)
-    {
-        uint64_t kv_nonce = generate_nonce();
-
-        if (kv_nonce == 0)
-        {
-            continue;
-        }
-
-        kvs_lock_op* kv = m_lock_ops.create_state(kv_nonce, sr);
-
-        if (kv)
-        {
-            return kv;
-        }
-    }
 }
 
 void
@@ -1039,7 +921,7 @@ daemon :: process_commit_record(comm_id, std::auto_ptr<e::buffer> msg, e::unpack
 }
 
 void
-daemon :: process_gv_propose(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
+daemon :: process_gv_propose(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
     transaction_group tg;
     generalized_paxos::command c;
@@ -1087,7 +969,7 @@ daemon :: process_gv_vote_1a(comm_id id, std::auto_ptr<e::buffer>, e::unpacker u
 }
 
 void
-daemon :: process_gv_vote_1b(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
+daemon :: process_gv_vote_1b(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
     transaction_group tg;
     generalized_paxos::message_p1b m;
@@ -1135,7 +1017,7 @@ daemon :: process_gv_vote_2a(comm_id id, std::auto_ptr<e::buffer>, e::unpacker u
 }
 
 void
-daemon :: process_gv_vote_2b(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
+daemon :: process_gv_vote_2b(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
     transaction_group tg;
     generalized_paxos::message_p2b m;
@@ -1220,6 +1102,69 @@ daemon :: process_kvs_lock_op_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpa
     else
     {
         LOG(INFO) << "dropped lock op response from=" << id << " nonce=" << nonce;
+    }
+}
+
+consus::kvs_read*
+daemon :: create_read(read_map_t::state_reference* sr)
+{
+    while (true)
+    {
+        uint64_t kv_nonce = generate_nonce();
+
+        if (kv_nonce == 0)
+        {
+            continue;
+        }
+
+        kvs_read* kv = m_readers.create_state(kv_nonce, sr);
+
+        if (kv)
+        {
+            return kv;
+        }
+    }
+}
+
+consus::kvs_write*
+daemon :: create_write(write_map_t::state_reference* sr)
+{
+    while (true)
+    {
+        uint64_t kv_nonce = generate_nonce();
+
+        if (kv_nonce == 0)
+        {
+            continue;
+        }
+
+        kvs_write* kv = m_writers.create_state(kv_nonce, sr);
+
+        if (kv)
+        {
+            return kv;
+        }
+    }
+}
+
+consus::kvs_lock_op*
+daemon :: create_lock_op(lock_op_map_t::state_reference* sr)
+{
+    while (true)
+    {
+        uint64_t kv_nonce = generate_nonce();
+
+        if (kv_nonce == 0)
+        {
+            continue;
+        }
+
+        kvs_lock_op* kv = m_lock_ops.create_state(kv_nonce, sr);
+
+        if (kv)
+        {
+            return kv;
+        }
     }
 }
 

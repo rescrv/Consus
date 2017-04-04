@@ -99,27 +99,6 @@ cdef extern from "consus.h":
                        const char* value, size_t value_sz,
                        consus_returncode* status)
 
-cdef extern from "consus-unsafe.h":
-
-    int64_t consus_unsafe_get(consus_client* client,
-                              const char* table,
-                              const char* key, size_t key_sz,
-                              consus_returncode* status,
-                              char** value, size_t* value_sz)
-    int64_t consus_unsafe_put(consus_client* client,
-                              const char* table,
-                              const char* key, size_t key_sz,
-                              const char* value, size_t value_sz,
-                              consus_returncode* status)
-    int64_t consus_unsafe_lock(consus_client* client,
-                               const char* table,
-                               const char* key, size_t key_sz,
-                               consus_returncode* status)
-    int64_t consus_unsafe_unlock(consus_client* client,
-                                 const char* table,
-                                 const char* key, size_t key_sz,
-                                 consus_returncode* status)
-
 
 class ConsusException(Exception):
 
@@ -187,66 +166,6 @@ cdef class Client:
 
     def begin_transaction(self):
         return Transaction(self)
-
-    def unsafe_get(self, str table, key):
-        cdef bytes tmp = table.encode('ascii')
-        cdef bytes jkey = json.dumps(key).encode('utf8')
-        cdef consus_returncode status
-        cdef const char* t = tmp
-        cdef const char* k = jkey
-        cdef size_t k_sz = len(jkey)
-        cdef char* value
-        cdef size_t value_sz
-        req = consus_unsafe_get(self.client, t, k, k_sz, &status, &value, &value_sz)
-        self.finish(req, &status)
-        if status == CONSUS_SUCCESS:
-            x = json.loads(value[:value_sz].decode('utf8'))
-            free(value)
-            return x
-        else:
-            return None
-
-    def unsafe_put(self, str table, key, value):
-        cdef bytes tmp = table.encode('ascii')
-        cdef bytes jkey = json.dumps(key).encode('utf8')
-        cdef bytes jvalue = json.dumps(value).encode('utf8')
-        cdef consus_returncode status
-        cdef const char* t = tmp
-        cdef const char* k = jkey
-        cdef size_t k_sz = len(jkey)
-        cdef const char* v = jvalue
-        cdef size_t v_sz = len(jvalue)
-        req = consus_unsafe_put(self.client, t, k, k_sz, v, v_sz, &status)
-        self.finish(req, &status)
-        return True
-
-    def unsafe_lock(self, str table, key):
-        cdef bytes tmp = table.encode('ascii')
-        cdef bytes jkey = json.dumps(key).encode('utf8')
-        cdef consus_returncode status
-        cdef const char* t = tmp
-        cdef const char* k = jkey
-        cdef size_t k_sz = len(jkey)
-        req = consus_unsafe_lock(self.client, t, k, k_sz, &status)
-        self.finish(req, &status)
-        if status == CONSUS_SUCCESS:
-            return True
-        else:
-            return False
-
-    def unsafe_unlock(self, str table, key):
-        cdef bytes tmp = table.encode('ascii')
-        cdef bytes jkey = json.dumps(key).encode('utf8')
-        cdef consus_returncode status
-        cdef const char* t = tmp
-        cdef const char* k = jkey
-        cdef size_t k_sz = len(jkey)
-        req = consus_unsafe_unlock(self.client, t, k, k_sz, &status)
-        self.finish(req, &status)
-        if status == CONSUS_SUCCESS:
-            return True
-        else:
-            return False
 
     cdef finish(self, int64_t req, consus_returncode* rstatus):
         cdef consus_returncode lstatus

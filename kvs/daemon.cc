@@ -638,9 +638,6 @@ daemon :: loop(size_t thread)
             case CONSUS_NOP:
                 break;
             case CLIENT_RESPONSE:
-            case UNSAFE_READ:
-            case UNSAFE_WRITE:
-            case UNSAFE_LOCK_OP:
             case TXMAN_BEGIN:
             case TXMAN_READ:
             case TXMAN_WRITE:

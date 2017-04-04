@@ -41,9 +41,6 @@ consus :: operator << (std::ostream& lhs, network_msgtype rhs)
     switch (rhs)
     {
         STRINGIFY(CLIENT_RESPONSE);
-        STRINGIFY(UNSAFE_READ);
-        STRINGIFY(UNSAFE_WRITE);
-        STRINGIFY(UNSAFE_LOCK_OP);
         STRINGIFY(TXMAN_BEGIN);
         STRINGIFY(TXMAN_READ);
         STRINGIFY(TXMAN_WRITE);

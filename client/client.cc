@@ -43,9 +43,6 @@
 #include "client/pending.h"
 #include "client/pending_begin_transaction.h"
 #include "client/pending_string.h"
-#include "client/pending_unsafe_lock_op.h"
-#include "client/pending_unsafe_read.h"
-#include "client/pending_unsafe_write.h"
 
 using consus::client;
 
@@ -192,126 +189,6 @@ client :: begin_transaction(consus_returncode* status,
 
     int64_t client_id = generate_new_client_id();
     pending* p = new pending_begin_transaction(client_id, status, xact);
-    p->kickstart_state_machine(this);
-    return client_id;
-}
-
-int64_t
-client :: unsafe_get(const char* table,
-                     const char* key, size_t key_sz,
-                     consus_returncode* status,
-                     char** value, size_t* value_sz)
-{
-    if (!maintain_coord_connection(status))
-    {
-        return -1;
-    }
-
-    unsigned char* binkey = NULL;
-    size_t binkey_sz = 0;
-
-    if (treadstone_json_sz_to_binary(key, key_sz, &binkey, &binkey_sz) < 0)
-    {
-        ERROR(INVALID) << "key contains invalid JSON";
-        return -1;
-    }
-
-    int64_t client_id = generate_new_client_id();
-    pending* p = new pending_unsafe_read(client_id, status,
-            table, binkey, binkey_sz, value, value_sz);
-    free(binkey);
-    p->kickstart_state_machine(this);
-    return client_id;
-}
-
-int64_t
-client :: unsafe_put(const char* table,
-                     const char* key, size_t key_sz,
-                     const char* value, size_t value_sz,
-                     consus_returncode* status)
-{
-    if (!maintain_coord_connection(status))
-    {
-        return -1;
-    }
-
-    unsigned char* binkey = NULL;
-    size_t binkey_sz = 0;
-    unsigned char* binval = NULL;
-    size_t binval_sz = 0;
-
-    if (treadstone_json_sz_to_binary(key, key_sz, &binkey, &binkey_sz) < 0)
-    {
-        ERROR(INVALID) << "key contains invalid JSON";
-        return -1;
-    }
-
-    if (treadstone_json_sz_to_binary(value, value_sz, &binval, &binval_sz) < 0)
-    {
-        ERROR(INVALID) << "value contains invalid JSON";
-        free(binkey);
-        return -1;
-    }
-
-    int64_t client_id = generate_new_client_id();
-    pending* p = new pending_unsafe_write(client_id, status,
-            table, binkey, binkey_sz, binval, binval_sz);
-    free(binkey);
-    free(binval);
-    p->kickstart_state_machine(this);
-    return client_id;
-}
-
-int64_t
-client :: unsafe_lock(const char* table,
-                      const char* key, size_t key_sz,
-                      consus_returncode* status)
-{
-    if (!maintain_coord_connection(status))
-    {
-        return -1;
-    }
-
-    unsigned char* binkey = NULL;
-    size_t binkey_sz = 0;
-
-    if (treadstone_json_sz_to_binary(key, key_sz, &binkey, &binkey_sz) < 0)
-    {
-        ERROR(INVALID) << "key contains invalid JSON";
-        return -1;
-    }
-
-    int64_t client_id = generate_new_client_id();
-    pending* p = new pending_unsafe_lock_op(client_id, status,
-            table, binkey, binkey_sz, LOCK_LOCK);
-    free(binkey);
-    p->kickstart_state_machine(this);
-    return client_id;
-}
-
-int64_t
-client :: unsafe_unlock(const char* table,
-                        const char* key, size_t key_sz,
-                        consus_returncode* status)
-{
-    if (!maintain_coord_connection(status))
-    {
-        return -1;
-    }
-
-    unsigned char* binkey = NULL;
-    size_t binkey_sz = 0;
-
-    if (treadstone_json_sz_to_binary(key, key_sz, &binkey, &binkey_sz) < 0)
-    {
-        ERROR(INVALID) << "key contains invalid JSON";
-        return -1;
-    }
-
-    int64_t client_id = generate_new_client_id();
-    pending* p = new pending_unsafe_lock_op(client_id, status,
-            table, binkey, binkey_sz, LOCK_UNLOCK);
-    free(binkey);
     p->kickstart_state_machine(this);
     return client_id;
 }

@@ -299,7 +299,6 @@ man/consus-coordinator.1: man/consus-coordinator.1.h2m | consus-coordinator${EXE
 
 include_HEADERS += include/consus.h
 include_HEADERS += include/consus-admin.h
-include_HEADERS += include/consus-unsafe.h
 pkgconfig_DATA += libconsus.pc
 
 lib_LTLIBRARIES += libconsus.la
@@ -315,9 +314,6 @@ noinst_HEADERS += client/pending_transaction_abort.h
 noinst_HEADERS += client/pending_transaction_commit.h
 noinst_HEADERS += client/pending_transaction_read.h
 noinst_HEADERS += client/pending_transaction_write.h
-noinst_HEADERS += client/pending_unsafe_lock_op.h
-noinst_HEADERS += client/pending_unsafe_read.h
-noinst_HEADERS += client/pending_unsafe_write.h
 noinst_HEADERS += client/server_selector.h
 noinst_HEADERS += client/transaction.h
 
@@ -350,9 +346,6 @@ libconsus_la_SOURCES += client/pending_transaction_abort.cc
 libconsus_la_SOURCES += client/pending_transaction_commit.cc
 libconsus_la_SOURCES += client/pending_transaction_read.cc
 libconsus_la_SOURCES += client/pending_transaction_write.cc
-libconsus_la_SOURCES += client/pending_unsafe_lock_op.cc
-libconsus_la_SOURCES += client/pending_unsafe_read.cc
-libconsus_la_SOURCES += client/pending_unsafe_write.cc
 libconsus_la_SOURCES += client/server_selector.cc
 libconsus_la_SOURCES += client/transaction.cc
 libconsus_la_CXXFLAGS = $(AM_CXXFLAGS) $(CXXFLAGS)

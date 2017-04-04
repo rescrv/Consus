@@ -110,9 +110,6 @@ class daemon
 
     private:
         void loop(size_t thread);
-        void process_unsafe_read(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
-        void process_unsafe_write(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
-        void process_unsafe_lock_op(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_begin(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_read(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_write(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
