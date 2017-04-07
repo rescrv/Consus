@@ -65,7 +65,7 @@ for gremlin, nodes, dcs in GREMLINS:
         f = open(path, 'w')
         f.write('''#!/usr/bin/env gremlin
 include ../{gremlin}
-timeout 90
+timeout 60
 run python ${{CONSUS_SRCDIR}}/{python}
 '''.format(gremlin=gremlin, python=x))
         f.flush()

@@ -22,4 +22,3 @@ daemon consus transaction-manager --debug --foreground --data=txman1.dc1 --conne
 daemon consus key-value-store --debug --foreground --data=kvs1.dc1 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 22761 --data-center dc1
 
 run consus availability-check --stable --transaction-managers 1 --key-value-stores 1 --transaction-manager-groups 1 --timeout 30
-run sleep 10 # XXX

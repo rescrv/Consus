@@ -1,4 +1,4 @@
 #!/usr/bin/env gremlin
 include ../1-node-7-dc-cluster.gremlin
-timeout 90
+timeout 60
 run python ${CONSUS_SRCDIR}/test/unit/00.nop-abort.py

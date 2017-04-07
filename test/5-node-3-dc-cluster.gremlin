@@ -60,4 +60,3 @@ daemon consus transaction-manager --debug --foreground --data=txman5.dc3 --conne
 daemon consus key-value-store --debug --foreground --data=kvs5.dc3 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 24765 --data-center dc3
 
 run consus availability-check --stable --transaction-managers 15 --key-value-stores 15 --transaction-manager-groups 3 --timeout 30
-run sleep 10 # XXX
