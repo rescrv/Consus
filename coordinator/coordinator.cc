@@ -779,7 +779,7 @@ void
 coordinator :: regenerate_paxos_groups(rsm_context*)
 {
     const unsigned SCATTER = 3;
-    const unsigned REPLICATION = 3;
+    const unsigned REPLICATION = 5;
     std::map<comm_id, unsigned> scatters;
     std::set<std::pair<comm_id, comm_id> > pairs;
 

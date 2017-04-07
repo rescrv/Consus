@@ -1,0 +1,4 @@
+#!/usr/bin/env gremlin
+include ../3-node-3-dc-cluster.gremlin
+timeout 60
+run python ${CONSUS_SRCDIR}/test/unit/10.single-get.py
