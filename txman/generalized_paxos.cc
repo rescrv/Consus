@@ -83,6 +83,35 @@ generalized_paxos :: init(const comparator* cmp, abstract_id us, const abstract_
     m_accepted.resize(acceptors_sz);
 }
 
+void
+generalized_paxos :: default_leader(abstract_id leader, ballot::type_t t)
+{
+    assert(m_init);
+    m_acceptor_ballot = ballot(t, 1, leader);
+    m_acceptor_value_src = m_acceptor_ballot;
+
+    for (size_t i = 0; i < m_accepted.size(); ++i)
+    {
+        m_accepted[i] = message_p2b(m_acceptor_ballot, m_acceptors[i], cstruct());
+    }
+
+    if (leader == m_us)
+    {
+        m_state = LEADING_PHASE2;
+        m_leader_ballot = m_acceptor_ballot;
+
+        for (size_t i = 0; i < m_promises.size(); ++i)
+        {
+            m_promises[i].b = m_acceptor_ballot;
+            m_promises[i].acceptor = m_acceptors[i];
+        }
+    }
+    else
+    {
+        m_state = PARTICIPATING;
+    }
+}
+
 bool
 generalized_paxos :: propose(const command& c)
 {

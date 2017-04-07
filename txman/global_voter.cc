@@ -265,6 +265,7 @@ global_voter :: init(uint64_t vote, const paxos_group_id* dcs, size_t dcs_sz, da
     abstract_id global_acceptors[CONSUS_MAX_REPLICATION_FACTOR];
     copy(m_dcs, m_dcs_sz, global_acceptors);
     m_global_gp.init(m_global_cmp.get(), abstract_id(m_tg.group.get()), global_acceptors, m_dcs_sz);
+    m_global_gp.default_leader(global_acceptors[0], generalized_paxos::ballot::FAST);
     // do this at the very end so any failures lead to this being GC'd
     LOG_IF(INFO, s_debug_mode) << logid() << "data centers: " << debug;
     m_global_init = true;
@@ -791,6 +792,7 @@ global_voter :: preconditions_for_data_center_paxos(daemon* d)
         abstract_id data_center_acceptors[CONSUS_MAX_REPLICATION_FACTOR];
         copy(group->members, group->members_sz, data_center_acceptors);
         m_data_center_gp.init(m_data_center_cmp.get(), abstract_id(d->m_us.id.get()), data_center_acceptors, group->members_sz);
+        m_data_center_gp.default_leader(data_center_acceptors[0], generalized_paxos::ballot::FAST);
         m_data_center_init = true;
     }
 

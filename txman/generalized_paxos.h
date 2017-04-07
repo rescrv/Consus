@@ -162,6 +162,7 @@ class generalized_paxos
 
     public:
         void init(const comparator* cmp, abstract_id us, const abstract_id* acceptors, size_t acceptors_sz);
+        void default_leader(abstract_id leader, ballot::type_t t);
 
         bool propose(const command& c);
         bool propose_from_p2b(const message_p2b& m);
