@@ -497,11 +497,11 @@ global_voter :: process_p2b(const generalized_paxos::message_p2b& m, daemon* d)
 
     if (processed)
     {
-        m_data_center_gp.propose_from_p2b(m);
         LOG_IF(INFO, s_debug_mode)
             << logid() << comm_id(m.acceptor.get())
             << " accepted state machine input "
             << pretty_print_outer(m.v);
+        m_data_center_gp.propose_from_p2b(m);
         work_state_machine(d);
     }
 
@@ -813,7 +813,6 @@ global_voter :: work_state_machine(daemon* d)
         return;
     }
 
-    const uint64_t now = po6::monotonic_time();
     bool send_m1;
     bool send_m2;
     bool send_m3;
@@ -824,12 +823,12 @@ global_voter :: work_state_machine(daemon* d)
                              &send_m1, &m1,
                              &send_m2, &m2,
                              &send_m3, &m3);
+    const uint64_t now = po6::monotonic_time();
 
     if (send_m1 && m_xmit_outer_m1a.may_transmit(m1, now, d))
     {
         uint64_t log_entry;
         void (daemon::*send_func)(int64_t, paxos_group_id, std::auto_ptr<e::buffer>);
-        m_xmit_outer_m1a.transmit_now(m1, now, m_highest_log_entry, &log_entry, &send_func);
         LOG_IF(INFO, s_debug_mode && m1 != m_xmit_outer_m1a.value())
             << logid () << "leading " << ph(m1.b);
         const size_t sz = BUSYBEE_HEADER_SIZE
@@ -838,6 +837,7 @@ global_voter :: work_state_machine(daemon* d)
                         + pack_size(m1);
         std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
         msg->pack_at(BUSYBEE_HEADER_SIZE) << GV_VOTE_1A << m_tg << m1;
+        m_xmit_outer_m1a.transmit_now(m1, now, m_highest_log_entry, &log_entry, &send_func);
         (d->*send_func)(m_highest_log_entry, m_tg.group, msg);
     }
 
@@ -845,7 +845,6 @@ global_voter :: work_state_machine(daemon* d)
     {
         uint64_t log_entry;
         void (daemon::*send_func)(int64_t, paxos_group_id, std::auto_ptr<e::buffer>);
-        m_xmit_outer_m2a.transmit_now(m2, now, m_highest_log_entry, &log_entry, &send_func);
         LOG_IF(INFO, s_debug_mode && m2 != m_xmit_outer_m2a.value())
             << logid() << "using " << ph(m2.b)
             << " to suggest state machine input "
@@ -856,6 +855,7 @@ global_voter :: work_state_machine(daemon* d)
                         + pack_size(m2);
         std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
         msg->pack_at(BUSYBEE_HEADER_SIZE) << GV_VOTE_2A << m_tg << m2;
+        m_xmit_outer_m2a.transmit_now(m2, now, m_highest_log_entry, &log_entry, &send_func);
         (d->*send_func)(m_highest_log_entry, m_tg.group, msg);
     }
 
@@ -863,7 +863,6 @@ global_voter :: work_state_machine(daemon* d)
     {
         uint64_t log_entry;
         void (daemon::*send_func)(int64_t, paxos_group_id, std::auto_ptr<e::buffer>);
-        m_xmit_outer_m2b.transmit_now(m3, now, m_highest_log_entry, &log_entry, &send_func);
         LOG_IF(INFO, s_debug_mode && m3 != m_xmit_outer_m2b.value())
             << logid() << comm_id(m3.acceptor.get())
             << "/this-node accepted state machine input "
@@ -874,6 +873,7 @@ global_voter :: work_state_machine(daemon* d)
                         + pack_size(m3);
         std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
         msg->pack_at(BUSYBEE_HEADER_SIZE) << GV_VOTE_2B << m_tg << m3;
+        m_xmit_outer_m2b.transmit_now(m3, now, m_highest_log_entry, &log_entry, &send_func);
         (d->*send_func)(m_highest_log_entry, m_tg.group, msg);
     }
 
