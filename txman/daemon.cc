@@ -413,24 +413,7 @@ daemon :: run(bool background,
 void
 daemon :: loop(size_t thread)
 {
-    size_t core = thread % sysconf(_SC_NPROCESSORS_ONLN);
-#ifdef __LINUX__
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    CPU_SET(core, &cpuset);
-    pthread_t cur = pthread_self();
-    int x = pthread_setaffinity_np(cur, sizeof(cpu_set_t), &cpuset);
-    assert(x == 0);
-#elif defined(__APPLE__)
-    thread_affinity_policy_data_t policy;
-    policy.affinity_tag = 0;
-    thread_policy_set(mach_thread_self(),
-                      THREAD_AFFINITY_POLICY,
-                      (thread_policy_t)&policy,
-                      THREAD_AFFINITY_POLICY_COUNT);
-#endif
-
-    LOG(INFO) << "network thread " << thread << " started on core " << core;
+    LOG(INFO) << "network thread " << thread << " started";
 
     sigset_t ss;
 
