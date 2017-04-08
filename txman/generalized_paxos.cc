@@ -325,10 +325,9 @@ generalized_paxos :: process_p2a(const message_p2a& m, bool* send, message_p2b* 
     {
         m_acceptor_value_src = m_acceptor_ballot;
         m_acceptor_value = m.v;
+        *send = true;
+        *r = message_p2b(m_acceptor_value_src, m_us, m_acceptor_value);
     }
-
-    *send = true;
-    *r = message_p2b(m_acceptor_value_src, m_us, m_acceptor_value);
 }
 
 bool
