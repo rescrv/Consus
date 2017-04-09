@@ -116,14 +116,8 @@ bool
 generalized_paxos :: propose(const command& c)
 {
     assert(m_init);
-
-    if (std::find(m_proposed.begin(), m_proposed.end(), c) != m_proposed.end())
-    {
-        return false;
-    }
-
-    m_proposed.push_back(c);
-    return true;
+    std::pair<std::set<command>::iterator, bool> inserted = m_proposed.insert(c);
+    return inserted.second;
 }
 
 bool
@@ -213,20 +207,19 @@ generalized_paxos :: advance(bool may_attempt_leadership,
                     propose(m_promises[i].v.commands[c]);
                 }
             }
-
-            std::sort(m_proposed.begin(), m_proposed.end());
         }
     }
 
     if (m_state >= LEADING_PHASE2 && m_leader_ballot.type == ballot::CLASSIC)
     {
-        for (size_t i = 0; i < m_proposed.size(); ++i)
+        for (std::set<command>::iterator it = m_proposed.begin();
+                it != m_proposed.end(); ++it)
         {
             if (std::find(m_leader_value.commands.begin(),
                           m_leader_value.commands.end(),
-                          m_proposed[i]) == m_leader_value.commands.end())
+                          *it) == m_leader_value.commands.end())
             {
-                m_leader_value.commands.push_back(m_proposed[i]);
+                m_leader_value.commands.push_back(*it);
             }
         }
 
@@ -236,14 +229,15 @@ generalized_paxos :: advance(bool may_attempt_leadership,
 
     if (m_acceptor_ballot.type == ballot::FAST)
     {
-        for (size_t i = 0; i < m_proposed.size(); ++i)
+        for (std::set<command>::iterator it = m_proposed.begin();
+                it != m_proposed.end(); ++it)
         {
             if (std::find(m_acceptor_value.commands.begin(),
                           m_acceptor_value.commands.end(),
-                          m_proposed[i]) == m_acceptor_value.commands.end())
+                          *it) == m_acceptor_value.commands.end())
             {
                 m_acceptor_value_src = m_acceptor_ballot;
-                m_acceptor_value.commands.push_back(m_proposed[i]);
+                m_acceptor_value.commands.push_back(*it);
             }
         }
     }
@@ -426,9 +420,10 @@ generalized_paxos :: debug_dump(e::compat::function<std::string(cstruct)> pcst,
 
     ostr << "]\n";
 
-    for (size_t i = 0; i < m_proposed.size(); ++i)
+    for (std::set<command>::iterator it = m_proposed.begin();
+            it != m_proposed.end(); ++it)
     {
-        ostr << "proposal[" << i << "] " << pcmd(m_proposed[i]) << "\n";
+        ostr << "proposal " << pcmd(*it) << "\n";
     }
 
     ostr << "acceptor " << m_acceptor_ballot << "\n";
@@ -520,12 +515,10 @@ generalized_paxos :: learned(cstruct* ret, bool* conflict)
         *ret = cstruct_lub(*ret, learned_values[i]);
     }
 
-#if GENERALIZED_PAXOS_DEBUG
     assert(cstruct_compatible(*ret, m_learned_cached));
     *ret = cstruct_lub(*ret, m_learned_cached);
     assert(cstruct_le(m_learned_cached, *ret));
     m_learned_cached = *ret;
-#endif
 }
 
 void

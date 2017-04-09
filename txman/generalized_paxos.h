@@ -239,7 +239,7 @@ class generalized_paxos
         state_t m_state;
         abstract_id m_us;
         std::vector<abstract_id> m_acceptors;
-        std::vector<command> m_proposed;
+        std::set<command> m_proposed;
 
         ballot m_acceptor_ballot;
         cstruct m_acceptor_value;
