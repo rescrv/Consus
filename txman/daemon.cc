@@ -1086,10 +1086,6 @@ daemon :: process_kvs_rep_rd_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpac
     {
         kv->response(rc, timestamp, value, this);
     }
-    else
-    {
-        LOG(INFO) << "dropped read response from=" << id << " nonce=" << nonce;
-    }
 }
 
 void
@@ -1107,10 +1103,6 @@ daemon :: process_kvs_rep_wr_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpac
     {
         kv->response(rc, this);
     }
-    else
-    {
-        LOG(INFO) << "dropped write response from=" << id << " nonce=" << nonce;
-    }
 }
 
 void
@@ -1127,10 +1119,6 @@ daemon :: process_kvs_lock_op_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpa
     if (kv)
     {
         kv->response(rc, this);
-    }
-    else
-    {
-        LOG(INFO) << "dropped lock op response from=" << id << " nonce=" << nonce;
     }
 }
 
