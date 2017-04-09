@@ -129,6 +129,7 @@ lock_replicator :: lock_replicator(uint64_t key)
     , m_op()
     , m_backing()
     , m_requests()
+    , m_info_limiter()
 {
 }
 
@@ -185,15 +186,11 @@ lock_replicator :: response(comm_id id, const transaction_group& tg,
 
     if (!stub)
     {
-        if (s_debug_mode)
-        {
-            LOG(INFO) << logid() << " dropped response; no outstanding request to " << id;
-        }
-
+        LOG_IF(INFO, s_debug_mode) << logid() << " dropped response; no outstanding request to " << id;
         return;
     }
 
-    LOG(INFO) << logid() << " response from=" << id;
+    LOG_IF(INFO, s_debug_mode) << logid() << " response from=" << id << " tg=" << tg << " rs=" << rs;
     stub->tg = tg;
     stub->rs = rs;
     work_state_machine(d);
@@ -331,6 +328,7 @@ lock_replicator :: work_state_machine(daemon* d)
 
     const uint64_t now = po6::monotonic_time();
     unsigned complete = 0;
+    std::vector<transaction_group> groups;
 
     for (unsigned i = 0; i < rs.num_replicas; ++i)
     {
@@ -346,6 +344,11 @@ lock_replicator :: work_state_machine(daemon* d)
         {
             ++complete;
             continue;
+        }
+
+        if (owner1->tg != transaction_group())
+        {
+            groups.push_back(owner1->tg);
         }
 
         if (owner1->last_request_time + d->resend_interval() < now &&
@@ -389,6 +392,47 @@ lock_replicator :: work_state_machine(daemon* d)
         if (s_debug_mode)
         {
             LOG(INFO) << logid() << " response=" << rc << " id=" << m_id;
+        }
+    }
+    else
+    {
+        std::sort(groups.begin(), groups.end());
+        transaction_group mode;
+        size_t count = 0;
+        const transaction_group* ptr = &groups[0];
+        const transaction_group* const end = ptr + groups.size();
+
+        while (ptr < end)
+        {
+            const transaction_group* tmp = ptr;
+
+            while (tmp < end && *ptr == *tmp)
+            {
+                ++tmp;
+            }
+
+            if ((size_t)(tmp - ptr) > count)
+            {
+                mode = *ptr;
+                count = tmp - ptr;
+            }
+
+            ptr = tmp;
+        }
+
+        if (mode != transaction_group() &&
+            m_info_limiter.may_transmit(mode, now, d))
+        {
+            const size_t sz = BUSYBEE_HEADER_SIZE
+                            + pack_size(TXMAN_HOLD_LOCK)
+                            + sizeof(uint64_t)
+                            + pack_size(mode);
+            std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
+            msg->pack_at(BUSYBEE_HEADER_SIZE) << TXMAN_HOLD_LOCK << m_nonce << mode;
+            // XXX this needs to contain info to pass to "mode" to break the
+            // lock
+            m_info_limiter.transmit_now(mode, now);
+            d->send(m_id, msg);
         }
     }
 }

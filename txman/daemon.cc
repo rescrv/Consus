@@ -501,6 +501,9 @@ daemon :: loop(size_t thread)
             case TXMAN_WOUND:
                 process_wound(id, msg, up);
                 break;
+            case TXMAN_HOLD_LOCK:
+                process_hold_lock(id, msg, up);
+                break;
             case TXMAN_PAXOS_2A:
                 process_paxos_2a(id, msg, up);
                 break;
@@ -771,6 +774,17 @@ daemon :: process_wound(comm_id, std::auto_ptr<e::buffer> msg, e::unpacker up)
         LOG_IF(INFO, s_debug_mode) << transaction_group::log(tg) << " forwarding wound message to group";
         send(tg.group, msg);
     }
+}
+
+void
+daemon :: process_hold_lock(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
+{
+    uint64_t nonce;
+    transaction_group tg;
+    up = up >> nonce >> tg;
+    CHECK_UNPACK(TXMAN_HOLD_LOCK, up);
+
+    LOG(INFO) << "XXX action not implemented " << nonce << " held up by transaction " << tg;
 }
 
 void

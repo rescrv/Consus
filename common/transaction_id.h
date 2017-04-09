@@ -55,17 +55,19 @@ class transaction_id
         size_t hash() const;
         bool preempts(const transaction_id& other) const;
 
+        int compare(const transaction_id& rhs) const;
+        bool operator < (const transaction_id& rhs) const { return compare(rhs) < 0; }
+        bool operator <= (const transaction_id& rhs) const { return compare(rhs) <= 0; }
+        bool operator == (const transaction_id& rhs) const { return compare(rhs) == 0; }
+        bool operator != (const transaction_id& rhs) const { return compare(rhs) != 0; }
+        bool operator >= (const transaction_id& rhs) const { return compare(rhs) >= 0; }
+        bool operator > (const transaction_id& rhs) const { return compare(rhs) > 0; }
+
     public:
         paxos_group_id group;
         uint64_t start;
         uint64_t number;
 };
-
-bool
-operator == (const transaction_id& lhs, const transaction_id& rhs);
-inline bool
-operator != (const transaction_id& lhs, const transaction_id& rhs)
-{ return !(lhs == rhs); }
 
 std::ostream&
 operator << (std::ostream& lhs, const transaction_id& rhs);

@@ -116,6 +116,7 @@ class daemon
         void process_commit(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_abort(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_wound(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_hold_lock(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_paxos_2a(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_paxos_2b(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_lv_vote_1a(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);

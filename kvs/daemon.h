@@ -123,7 +123,7 @@ class daemon
     private:
         static std::string logid(const e::slice& table, const e::slice& key);
 
-    private:
+    public:
         configuration* get_config();
         void debug_dump();
         uint64_t generate_id();

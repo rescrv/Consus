@@ -83,6 +83,7 @@ class lock_state
         void send_wound_abort(comm_id id, uint64_t nonce,
                               const transaction_group& tg,
                               daemon* d);
+        void send_lock_held(const transaction_group& tg, daemon* d);
         void send_response(comm_id id, uint64_t nonce,
                            const transaction_group& tg,
                            daemon* d);

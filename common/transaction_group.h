@@ -50,16 +50,18 @@ class transaction_group
     public:
         size_t hash() const;
 
+        int compare(const transaction_group& rhs) const;
+        bool operator < (const transaction_group& rhs) const { return compare(rhs) < 0; }
+        bool operator <= (const transaction_group& rhs) const { return compare(rhs) <= 0; }
+        bool operator == (const transaction_group& rhs) const { return compare(rhs) == 0; }
+        bool operator != (const transaction_group& rhs) const { return compare(rhs) != 0; }
+        bool operator >= (const transaction_group& rhs) const { return compare(rhs) >= 0; }
+        bool operator > (const transaction_group& rhs) const { return compare(rhs) > 0; }
+
     public:
         paxos_group_id group;
         transaction_id txid;
 };
-
-bool
-operator == (const transaction_group& lhs, const transaction_group& rhs);
-inline bool
-operator != (const transaction_group& lhs, const transaction_group& rhs)
-{ return !(lhs == rhs); }
 
 std::ostream&
 operator << (std::ostream& lhs, const transaction_group& rhs);

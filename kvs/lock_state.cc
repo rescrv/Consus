@@ -167,7 +167,6 @@ lock_state :: enqueue_lock(comm_id id, uint64_t nonce,
             return;
         }
 
-        send_response(id, nonce, tg, d);
         m_holder = tg;
     }
 
@@ -180,6 +179,7 @@ lock_state :: enqueue_lock(comm_id id, uint64_t nonce,
                                    << transaction_group::log(m_holder);
     }
 
+    send_response(id, nonce, m_holder, d);
     invariant_check();
 }
 
@@ -375,6 +375,7 @@ lock_state :: send_wound(comm_id id, uint64_t nonce, uint8_t action,
 {
     if (id == comm_id())
     {
+        LOG_IF(INFO, s_debug_mode) << logid() << " dropping wound to null id";
         return;
     }
 

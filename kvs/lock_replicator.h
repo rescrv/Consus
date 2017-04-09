@@ -40,6 +40,7 @@
 #include "common/ids.h"
 #include "common/lock.h"
 #include "common/transaction_group.h"
+#include "common/transmit_limiter.h"
 
 BEGIN_CONSUS_NAMESPACE
 class daemon;
@@ -90,6 +91,7 @@ class lock_replicator
         lock_op m_op;
         std::auto_ptr<e::buffer> m_backing;
         std::vector<lock_stub> m_requests;
+        transmit_limiter<transaction_group, daemon> m_info_limiter;
 };
 
 END_CONSUS_NAMESPACE

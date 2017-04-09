@@ -73,6 +73,16 @@ transaction_group :: hash() const
     return h(group.get()) ^ txid.hash();
 }
 
+int
+transaction_group :: compare(const transaction_group& rhs) const
+{
+    if (group < rhs.group) return -1;
+    if (group > rhs.group) return 1;
+    if (txid < rhs.txid) return -1;
+    if (txid > rhs.txid) return 1;
+    return 0;
+}
+
 std::string
 transaction_group :: log(const transaction_group& tg)
 {
@@ -85,12 +95,6 @@ transaction_group :: log(const transaction_group& tg)
     size_t sz = e::b64_ntop(buf, ptr - buf, b64, sizeof(b64));
     assert(sz <= sizeof(b64));
     return std::string(b64, sz);
-}
-
-bool
-consus :: operator == (const transaction_group& lhs, const transaction_group& rhs)
-{
-    return lhs.group == rhs.group && lhs.txid == rhs.txid;
 }
 
 std::ostream&

@@ -69,12 +69,16 @@ transaction_id :: preempts(const transaction_id& other) const
            (start == other.start && number < other.number);
 }
 
-bool
-consus :: operator == (const transaction_id& lhs, const transaction_id& rhs)
+int
+transaction_id :: compare(const transaction_id& rhs) const
 {
-    return lhs.group == rhs.group &&
-           lhs.start == rhs.start &&
-           lhs.number == rhs.number;
+    if (group < rhs.group) return -1;
+    if (group > rhs.group) return 1;
+    if (number < rhs.number) return -1;
+    if (number > rhs.number) return 1;
+    if (start < rhs.start) return -1;
+    if (start > rhs.start) return 1;
+    return 0;
 }
 
 std::ostream&
