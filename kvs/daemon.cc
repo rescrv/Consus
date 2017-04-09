@@ -635,6 +635,7 @@ daemon :: loop(size_t thread)
             case LV_VOTE_2B:
             case LV_VOTE_LEARN:
             case COMMIT_RECORD:
+            case GV_OUTCOME:
             case GV_PROPOSE:
             case GV_VOTE_1A:
             case GV_VOTE_1B:
@@ -935,10 +936,6 @@ daemon :: process_raw_lk_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpacker 
     {
         lk->response(id, tg, rs, this);
     }
-    else
-    {
-        LOG_IF(INFO, s_debug_mode) << "dropped lock response; nonce=" << nonce << " from=" << id;
-    }
 }
 
 void
@@ -965,10 +962,6 @@ daemon :: process_wound_xact(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
             lk->drop(tg);
         }
     }
-    else
-    {
-        LOG_IF(INFO, s_debug_mode) << "dropping transaction wound for " << tg;
-    }
 }
 
 void
@@ -986,10 +979,6 @@ daemon :: process_migrate_syn(comm_id id, std::auto_ptr<e::buffer> msg, e::unpac
         assert(pack_size(KVS_MIGRATE_SYN) == pack_size(KVS_MIGRATE_ACK));
         msg->pack_at(BUSYBEE_HEADER_SIZE) << KVS_MIGRATE_ACK << key << c->version();
         send(id, msg);
-    }
-    else
-    {
-        LOG_IF(INFO, s_debug_mode) << "dropping migration SYN for " << key << "/" << version;
     }
 }
 
