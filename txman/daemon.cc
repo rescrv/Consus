@@ -576,7 +576,7 @@ daemon :: loop(size_t thread)
         }
 
         const uint64_t end = po6::monotonic_time();
-        LOG_IF(INFO, s_debug_mode && (end - start) > 100 * PO6_MILLIS) << mt << " took " << ((end - start) / (100 * PO6_MILLIS)) << "ms";
+        LOG_IF(INFO, end - start > 100 * PO6_MILLIS) << mt << " took " << ((end - start) / PO6_MILLIS) << "ms";
         m_gc.quiescent_state(&ts);
     }
 
