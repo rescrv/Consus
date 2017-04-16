@@ -1070,7 +1070,7 @@ daemon :: process_gv_vote_2b(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
 }
 
 void
-daemon :: process_kvs_rep_rd_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
+daemon :: process_kvs_rep_rd_resp(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
     uint64_t nonce;
     consus_returncode rc;
@@ -1089,7 +1089,7 @@ daemon :: process_kvs_rep_rd_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpac
 }
 
 void
-daemon :: process_kvs_rep_wr_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
+daemon :: process_kvs_rep_wr_resp(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
     uint64_t nonce;
     consus_returncode rc;
@@ -1106,7 +1106,7 @@ daemon :: process_kvs_rep_wr_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpac
 }
 
 void
-daemon :: process_kvs_lock_op_resp(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
+daemon :: process_kvs_lock_op_resp(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
     uint64_t nonce;
     consus_returncode rc;

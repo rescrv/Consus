@@ -30,6 +30,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 
 // e
 #include <e/serialization.h>
@@ -38,7 +39,10 @@
 // consus
 #include "txman/generalized_paxos.h"
 
-#if GENERALIZED_PAXOS_DEBUG
+#ifdef GENERALIZED_PAXOS_THROW
+#define GP_ASSERT(X) do { if (!(X)) throw std::runtime_error("bad shit happened"); } while (false)
+#define GP_ABORT() do { abort(); } while (false)
+#elif GENERALIZED_PAXOS_DEBUG
 #define GP_ASSERT(X) do { assert((X)); } while (false)
 #define GP_ABORT() do { abort(); } while (false)
 #else
@@ -48,6 +52,97 @@
 
 using consus::generalized_paxos;
 
+generalized_paxos :: internal_cstruct :: internal_cstruct()
+    : ids()
+    , transitive_closure()
+    , transitive_closure_N(0)
+{
+}
+
+generalized_paxos :: internal_cstruct :: ~internal_cstruct() throw ()
+{
+}
+
+bool
+generalized_paxos :: internal_cstruct :: has_command(uint64_t c) const
+{
+    return are_adjacent(c, c);
+}
+
+bool
+generalized_paxos :: internal_cstruct :: are_adjacent(uint64_t u, uint64_t v) const
+{
+    return u < transitive_closure_N &&
+           v < transitive_closure_N &&
+           (transitive_closure[byte(u, v)] & (1ULL << bit(u, v)));
+}
+
+void
+generalized_paxos :: internal_cstruct :: set_adjacent(uint64_t u, uint64_t v)
+{
+    assert(u < transitive_closure_N);
+    assert(v < transitive_closure_N);
+    transitive_closure[byte(u, v)] |= 1ULL << bit(u, v);
+}
+
+void
+generalized_paxos :: internal_cstruct :: set_N(uint64_t N)
+{
+    transitive_closure_N = N;
+    const uint64_t bits = N * N;
+    const uint64_t quads = (bits + 63) / 64;
+    transitive_closure.resize(quads);
+
+    for (size_t i = 0; i < quads; ++i)
+    {
+        transitive_closure[i] = 0;
+    }
+}
+
+void
+generalized_paxos :: internal_cstruct :: close_transitively()
+{
+    for (uint64_t i = 0; i < ids.size(); ++i)
+    {
+        const uint64_t u = ids[i];
+
+        for (uint64_t j = 0; j < ids.size(); ++j)
+        {
+            const uint64_t v = ids[j];
+
+            for (uint64_t k = 0; k < ids.size(); ++k)
+            {
+                const uint64_t w = ids[k];
+
+                if (are_adjacent(u, v) && are_adjacent(v, w))
+                {
+                    set_adjacent(u, w);
+                }
+            }
+        }
+    }
+}
+
+void
+generalized_paxos :: internal_cstruct :: swap(internal_cstruct* other)
+{
+    std::swap(ids, other->ids);
+    std::swap(transitive_closure, other->transitive_closure);
+    std::swap(transitive_closure_N, other->transitive_closure_N);
+}
+
+uint64_t
+generalized_paxos :: internal_cstruct :: byte(uint64_t u, uint64_t v) const
+{
+    return (u * transitive_closure_N + v) / 64;
+}
+
+uint64_t
+generalized_paxos :: internal_cstruct :: bit(uint64_t u, uint64_t v) const
+{
+    return (u * transitive_closure_N + v) % 64;
+}
+
 generalized_paxos :: generalized_paxos()
     : m_init(false)
     , m_interfere(NULL)
@@ -55,13 +150,19 @@ generalized_paxos :: generalized_paxos()
     , m_us()
     , m_acceptors()
     , m_proposed()
+    , m_commands()
+    , m_command_ids()
     , m_acceptor_ballot()
     , m_acceptor_value()
+    , m_acceptor_ivalue()
     , m_acceptor_value_src()
     , m_leader_ballot()
     , m_leader_value()
+    , m_leader_ivalue()
     , m_promises()
+    , m_ipromises()
     , m_accepted()
+    , m_iaccepted()
     , m_learned_cached()
 {
 }
@@ -80,7 +181,9 @@ generalized_paxos :: init(const comparator* cmp, abstract_id us, const abstract_
     m_us = us;
     m_acceptors = std::vector<abstract_id>(acceptors, acceptors + acceptors_sz);
     m_promises.resize(acceptors_sz);
+    m_ipromises.resize(acceptors_sz);
     m_accepted.resize(acceptors_sz);
+    m_iaccepted.resize(acceptors_sz);
 }
 
 void
@@ -116,8 +219,14 @@ bool
 generalized_paxos :: propose(const command& c)
 {
     assert(m_init);
-    std::pair<std::set<command>::iterator, bool> inserted = m_proposed.insert(c);
-    return inserted.second;
+
+    if (std::find(m_proposed.begin(), m_proposed.end(), c) != m_proposed.end())
+    {
+        return false;
+    }
+
+    m_proposed.push_back(c);
+    return true;
 }
 
 bool
@@ -146,13 +255,13 @@ generalized_paxos :: advance(bool may_attempt_leadership,
     *send_m1 = false;
     *send_m2 = false;
     *send_m3 = false;
-    cstruct learn;
+    internal_cstruct learn;
     bool conflict = false;
     learned(&learn, &conflict);
 
     if (m_state >= LEADING_PHASE2 &&
         m_leader_ballot.type == ballot::CLASSIC &&
-        cstruct_eq(learn, m_leader_value))
+        icstruct_eq(learn, m_leader_ivalue))
     {
         may_attempt_leadership = true;
         m_state = PARTICIPATING;
@@ -190,15 +299,9 @@ generalized_paxos :: advance(bool may_attempt_leadership,
         if (promised >= quorum() && m_state < LEADING_PHASE2)
         {
             m_state = LEADING_PHASE2;
-            m_leader_value = proven_safe();
-
-            for (size_t i = 0; i < m_promises.size(); ++i)
-            {
-                if (m_promises[i].b == m_leader_ballot && cstruct_compatible(m_leader_value, m_promises[i].v))
-                {
-                    m_leader_value = cstruct_lub(m_leader_value, m_promises[i].v);
-                }
-            }
+            proven_safe(&m_leader_ivalue);
+            icstruct_to_cstruct(m_leader_ivalue, &m_leader_value);
+            GP_ASSERT(icstruct_compatible(m_leader_ivalue, m_learned_cached));
 
             for (size_t i = 0; i < m_promises.size(); ++i)
             {
@@ -207,20 +310,29 @@ generalized_paxos :: advance(bool may_attempt_leadership,
                     propose(m_promises[i].v.commands[c]);
                 }
             }
+
+            std::sort(m_proposed.begin(), m_proposed.end());
         }
     }
 
     if (m_state >= LEADING_PHASE2 && m_leader_ballot.type == ballot::CLASSIC)
     {
-        for (std::set<command>::iterator it = m_proposed.begin();
-                it != m_proposed.end(); ++it)
+        bool changed = false;
+
+        for (size_t i = 0; i < m_proposed.size(); ++i)
         {
             if (std::find(m_leader_value.commands.begin(),
                           m_leader_value.commands.end(),
-                          *it) == m_leader_value.commands.end())
+                          m_proposed[i]) == m_leader_value.commands.end())
             {
-                m_leader_value.commands.push_back(*it);
+                m_leader_value.commands.push_back(m_proposed[i]);
+                changed = true;
             }
+        }
+
+        if (changed)
+        {
+            cstruct_to_icstruct(m_leader_value, &m_leader_ivalue);
         }
 
         *send_m2 = true;
@@ -229,16 +341,23 @@ generalized_paxos :: advance(bool may_attempt_leadership,
 
     if (m_acceptor_ballot.type == ballot::FAST)
     {
-        for (std::set<command>::iterator it = m_proposed.begin();
-                it != m_proposed.end(); ++it)
+        bool changed = false;
+
+        for (size_t i = 0; i < m_proposed.size(); ++i)
         {
             if (std::find(m_acceptor_value.commands.begin(),
                           m_acceptor_value.commands.end(),
-                          *it) == m_acceptor_value.commands.end())
+                          m_proposed[i]) == m_acceptor_value.commands.end())
             {
                 m_acceptor_value_src = m_acceptor_ballot;
-                m_acceptor_value.commands.push_back(*it);
+                m_acceptor_value.commands.push_back(m_proposed[i]);
+                changed = true;
             }
+        }
+
+        if (changed)
+        {
+            cstruct_to_icstruct(m_acceptor_value, &m_acceptor_ivalue);
         }
     }
 
@@ -299,6 +418,7 @@ generalized_paxos :: process_p1b(const message_p1b& m)
         m_state >= LEADING_PHASE1)
     {
         m_promises[idx] = m;
+        cstruct_to_icstruct(m_promises[idx].v, &m_ipromises[idx]);
         return true;
     }
 
@@ -312,13 +432,17 @@ generalized_paxos :: process_p2a(const message_p2a& m, bool* send, message_p2b* 
     assert(m_init);
     *send = false;
 
+    internal_cstruct imv;
+    cstruct_to_icstruct(m.v, &imv);
+
     if (m.b.type == ballot::CLASSIC &&
         m.b == m_acceptor_ballot &&
         (m_acceptor_value_src != m_acceptor_ballot ||
-         cstruct_le(m_acceptor_value, m.v)))
+         icstruct_le(m_acceptor_ivalue, imv)))
     {
         m_acceptor_value_src = m_acceptor_ballot;
         m_acceptor_value = m.v;
+        m_acceptor_ivalue = imv;
         *send = true;
         *r = message_p2b(m_acceptor_value_src, m_us, m_acceptor_value);
     }
@@ -336,55 +460,37 @@ generalized_paxos :: process_p2b(const message_p2b& m)
         return false;
     }
 
-    bool changed = false;
+    internal_cstruct imv;
+    cstruct_to_icstruct(m.v, &imv);
 
-    if (m_accepted[idx].b < m.b)
+    if (m_accepted[idx].b < m.b ||
+        (m_accepted[idx].b == m.b &&
+         icstruct_lt(m_iaccepted[idx], imv)))
     {
         m_accepted[idx] = m;
-        changed = true;
+        m_iaccepted[idx] = imv;
+        return true;
     }
 
-    if (m_accepted[idx].b == m.b &&
-        cstruct_lt(m_accepted[idx].v, m.v))
-    {
-        m_accepted[idx] = m;
-        changed = true;
-    }
-
-    return changed;
+    return false;
 }
 
 generalized_paxos::cstruct
 generalized_paxos :: learned()
 {
-    cstruct ret;
+    internal_cstruct iret;
     bool conflict;
-    learned(&ret, &conflict);
+    learned(&iret, &conflict);
+    cstruct ret;
+    icstruct_to_cstruct(iret, &ret);
     return ret;
 }
 
 void
 generalized_paxos :: all_accepted_commands(std::vector<command>* commands)
 {
-    commands->clear();
-
-    for (size_t i = 0; i < m_acceptor_value.commands.size(); ++i)
-    {
-        commands->push_back(m_acceptor_value.commands[i]);
-    }
-
-    for (size_t i = 0; i < m_accepted.size(); ++i)
-    {
-        for (size_t j = 0; j < m_accepted[i].v.commands.size(); ++j)
-        {
-            commands->push_back(m_accepted[i].v.commands[j]);
-        }
-    }
-
+    *commands = m_commands;
     std::sort(commands->begin(), commands->end());
-    std::vector<command>::iterator it;
-    it = std::unique(commands->begin(), commands->end());
-    commands->resize(it - commands->begin());
 }
 
 std::string
@@ -420,10 +526,9 @@ generalized_paxos :: debug_dump(e::compat::function<std::string(cstruct)> pcst,
 
     ostr << "]\n";
 
-    for (std::set<command>::iterator it = m_proposed.begin();
-            it != m_proposed.end(); ++it)
+    for (size_t i = 0; i < m_proposed.size(); ++i)
     {
-        ostr << "proposal " << pcmd(*it) << "\n";
+        ostr << "proposal[" << i << "] " << pcmd(m_proposed[i]) << "\n";
     }
 
     ostr << "acceptor " << m_acceptor_ballot << "\n";
@@ -473,7 +578,7 @@ generalized_paxos :: quorum()
 }
 
 void
-generalized_paxos :: learned(cstruct* ret, bool* conflict)
+generalized_paxos :: learned(internal_cstruct* ret, bool* conflict)
 {
     *conflict = false;
     typedef std::map<ballot, uint64_t> ballot_map_t;
@@ -484,7 +589,8 @@ generalized_paxos :: learned(cstruct* ret, bool* conflict)
         ++ballots[m_accepted[i].b];
     }
 
-    std::vector<cstruct> learned_values;
+    std::vector<internal_cstruct> learned_values;
+    learned_values.reserve(ballots.size() * quorum() * (1U << CONSUS_MAX_REPLICATION_FACTOR));
 
     for (ballot_map_t::iterator it = ballots.begin(); it != ballots.end(); ++it)
     {
@@ -497,40 +603,42 @@ generalized_paxos :: learned(cstruct* ret, bool* conflict)
 #if GENERALIZED_PAXOS_DEBUG
     for (size_t i = 0; i < learned_values.size(); ++i)
     {
-        assert(cstruct_compatible(m_learned_cached, learned_values[i]));
-        assert(cstruct_compatible(learned_values[i], m_learned_cached));
+        GP_ASSERT(icstruct_compatible(m_learned_cached, learned_values[i]));
+        GP_ASSERT(icstruct_compatible(learned_values[i], m_learned_cached));
 
         for (size_t j = i + 1; j < learned_values.size(); ++j)
         {
-            assert(cstruct_compatible(learned_values[i], learned_values[j]));
-            assert(cstruct_compatible(learned_values[j], learned_values[i]));
+            GP_ASSERT(icstruct_compatible(learned_values[i], learned_values[j]));
+            GP_ASSERT(icstruct_compatible(learned_values[j], learned_values[i]));
         }
     }
 #endif
 
-    *ret = cstruct();
+    std::vector<const internal_cstruct*> lv_ptrs;
+    lv_ptrs.reserve(learned_values.size() + 1);
 
     for (size_t i = 0; i < learned_values.size(); ++i)
     {
-        *ret = cstruct_lub(*ret, learned_values[i]);
+        lv_ptrs.push_back(&learned_values[i]);
     }
 
-    assert(cstruct_compatible(*ret, m_learned_cached));
-    *ret = cstruct_lub(*ret, m_learned_cached);
-    assert(cstruct_le(m_learned_cached, *ret));
+    lv_ptrs.push_back(&m_learned_cached);
+    *ret = internal_cstruct();
+    icstruct_lub(&lv_ptrs[0], lv_ptrs.size(), ret);
+    GP_ASSERT(icstruct_le(m_learned_cached, *ret));
     m_learned_cached = *ret;
 }
 
 void
-generalized_paxos :: learned(const ballot& b, std::vector<cstruct>* lv, bool* conflict)
+generalized_paxos :: learned(const ballot& b, std::vector<internal_cstruct>* lv, bool* conflict)
 {
-    std::vector<cstruct*> vs;
+    std::vector<const internal_cstruct*> vs;
 
     for (size_t i = 0; i < m_accepted.size(); ++i)
     {
         if (m_accepted[i].b == b)
         {
-            vs.push_back(&m_accepted[i].v);
+            vs.push_back(&m_iaccepted[i]);
         }
     }
 
@@ -539,8 +647,8 @@ generalized_paxos :: learned(const ballot& b, std::vector<cstruct>* lv, bool* co
 }
 
 void
-generalized_paxos :: learned(cstruct** vs, size_t vs_sz, size_t max_sz,
-                             std::vector<cstruct>* lv, bool* conflict)
+generalized_paxos :: learned(const internal_cstruct** vs, size_t vs_sz, size_t max_sz,
+                             std::vector<internal_cstruct>* lv, bool* conflict)
 {
     assert(vs_sz >  0);
 
@@ -550,9 +658,8 @@ generalized_paxos :: learned(cstruct** vs, size_t vs_sz, size_t max_sz,
     }
     else if (vs_sz <= max_sz)
     {
-        cstruct tmp;
-        learned(vs, vs_sz, &tmp, conflict);
-        lv->push_back(tmp);
+        lv->push_back(internal_cstruct());
+        icstruct_glb(vs, vs_sz, &lv->back(), conflict);
     }
     else
     {
@@ -563,7 +670,7 @@ generalized_paxos :: learned(cstruct** vs, size_t vs_sz, size_t max_sz,
 
         while (v < limit)
         {
-            std::vector<cstruct*> nvs;
+            std::vector<const internal_cstruct*> nvs;
 
             for (size_t i = 0; i < vs_sz; ++i)
             {
@@ -574,9 +681,8 @@ generalized_paxos :: learned(cstruct** vs, size_t vs_sz, size_t max_sz,
             }
 
             assert(nvs.size() == max_sz);
-            cstruct tmp;
-            learned(&nvs[0], nvs.size(), &tmp, conflict);
-            lv->push_back(tmp);
+            lv->push_back(internal_cstruct());
+            icstruct_glb(&nvs[0], nvs.size(), &lv->back(), conflict);
 
             // lexicographically next bit permutation
             // http://graphics.stanford.edu/~seander/bithacks.html#NextBitPermutation
@@ -587,20 +693,7 @@ generalized_paxos :: learned(cstruct** vs, size_t vs_sz, size_t max_sz,
 }
 
 void
-generalized_paxos :: learned(cstruct** vs, size_t vs_sz,
-                             cstruct* v, bool* conflict)
-{
-    assert(vs_sz > 0);
-    *v = *vs[0];
-
-    for (size_t i = 0; i < vs_sz; ++i)
-    {
-        *v = cstruct_glb(*v, *vs[i], conflict);
-    }
-}
-
-generalized_paxos::cstruct
-generalized_paxos :: proven_safe()
+generalized_paxos :: proven_safe(internal_cstruct* ret)
 {
     ballot k;
 
@@ -616,11 +709,12 @@ generalized_paxos :: proven_safe()
     const uint64_t limit = 1ULL << m_promises.size();
     uint64_t v = (1ULL << quorum()) - 1ULL;
     assert(v < limit);
-    std::vector<cstruct> gamma_R;
+    std::vector<internal_cstruct> gamma_R;
+    gamma_R.reserve(limit);
 
     while (v < limit)
     {
-        std::vector<cstruct*> vs;
+        std::vector<const internal_cstruct*> vs;
 
         for (size_t i = 0; i < m_promises.size(); ++i)
         {
@@ -629,17 +723,16 @@ generalized_paxos :: proven_safe()
             {
                 if (m_promises[i].vb == k && !m_promises[i].v.is_none())
                 {
-                    vs.push_back(&m_promises[i].v);
+                    vs.push_back(&m_ipromises[i]);
                 }
             }
         }
 
         if (!vs.empty())
         {
-            cstruct tmp;
+            gamma_R.push_back(internal_cstruct());
             bool conflict = false;
-            learned(&vs[0], vs.size(), &tmp, &conflict);
-            gamma_R.push_back(tmp);
+            icstruct_glb(&vs[0], vs.size(), &gamma_R.back(), &conflict);
         }
 
         // lexicographically next bit permutation
@@ -654,131 +747,139 @@ generalized_paxos :: proven_safe()
         {
             if (m_promises[i].b == m_leader_ballot && m_promises[i].vb == k)
             {
-                return m_promises[i].v;
+                *ret = m_ipromises[i];
+                return;
             }
         }
     }
 
-    cstruct ret;
+    std::vector<const internal_cstruct*> gr_ptrs;
+    gr_ptrs.reserve(gamma_R.size());
 
     for (size_t i = 0; i < gamma_R.size(); ++i)
     {
-        for (size_t j = i + 1; j < gamma_R.size(); ++j)
+        gr_ptrs.push_back(&gamma_R[i]);
+    }
+
+    *ret = internal_cstruct();
+    icstruct_lub(&gr_ptrs[0], gr_ptrs.size(), ret);
+}
+
+const generalized_paxos::command&
+generalized_paxos :: id_command(uint64_t c)
+{
+    for (command_map_t::iterator it = m_command_ids.begin();
+            it != m_command_ids.end(); ++it)
+    {
+        if (it->second == c)
         {
-            if (!cstruct_compatible(gamma_R[i], gamma_R[j]))
+            return it->first;
+        }
+    }
+
+    abort();
+}
+
+uint64_t
+generalized_paxos :: command_id(const command& c)
+{
+    command_map_t::iterator it = m_command_ids.find(c);
+
+    if (it != m_command_ids.end())
+    {
+        return it->second;
+    }
+
+    uint64_t id = m_commands.size();
+    m_commands.push_back(c);
+    m_command_ids.insert(std::make_pair(c, id));
+    return id;
+}
+
+void
+generalized_paxos :: cstruct_to_icstruct(const cstruct& cs, internal_cstruct* ics)
+{
+    ics->ids.resize(cs.commands.size());
+    uint64_t largest = 0;
+
+    for (size_t i = 0; i < cs.commands.size(); ++i)
+    {
+        ics->ids[i] = command_id(cs.commands[i]);
+        largest = std::max(largest, ics->ids[i]);
+    }
+
+    ++largest;
+    ics->set_N(largest);
+
+    for (uint64_t i = 0; i < ics->ids.size(); ++i)
+    {
+        const uint64_t c = ics->ids[i];
+        ics->set_adjacent(c, c);
+    }
+
+    for (uint64_t i = 0; i < ics->ids.size(); ++i)
+    {
+        for (uint64_t j = i + 1; j < ics->ids.size(); ++j)
+        {
+            if (m_interfere->conflict(cs.commands[i], cs.commands[j]))
             {
-                return ret;
+                ics->set_adjacent(ics->ids[i], ics->ids[j]);
             }
         }
     }
 
-    for (size_t i = 0; i < gamma_R.size(); ++i)
-    {
-        ret = cstruct_lub(ret, gamma_R[i]);
-    }
+    ics->close_transitively();
+}
 
-    return ret;
+void
+generalized_paxos :: icstruct_to_cstruct(const internal_cstruct& ics, cstruct* cs)
+{
+    cs->commands.resize(ics.ids.size());
+
+    for (size_t i = 0; i < ics.ids.size(); ++i)
+    {
+        cs->commands[i] = id_command(ics.ids[i]);
+    }
 }
 
 bool
-generalized_paxos :: cstruct_lt(const cstruct& lhs, const cstruct& rhs)
+generalized_paxos :: icstruct_lt(const internal_cstruct& lhs,
+                                 const internal_cstruct& rhs)
 {
-    if (lhs.commands.size() >= rhs.commands.size())
-    {
-        return false;
-    }
-
-    return cstruct_le(lhs, rhs) && !cstruct_eq(lhs, rhs);
+    return lhs.ids.size() < rhs.ids.size() && icstruct_le(lhs, rhs);
 }
 
 bool
-generalized_paxos :: cstruct_le(const cstruct& lhs, const cstruct& rhs)
+generalized_paxos :: icstruct_le(const internal_cstruct& lhs,
+                                 const internal_cstruct& rhs)
 {
-    if (lhs.commands.size() > rhs.commands.size())
+    // lhs is a prefix of rhs if all elements in lhs are in rhs and the ordering
+    // of the common elements is compatible
+
+    for (size_t i = 0; i < lhs.ids.size(); ++i)
     {
-        return false;
-    }
+        const uint64_t c = lhs.ids[i];
 
-    std::vector<command> lhs_elem;
-    std::vector<command> rhs_elem;
-    partial_order_t lhs_order;
-    partial_order_t rhs_order;
-    cstruct_pieces(lhs, &lhs_elem, &lhs_order);
-    cstruct_pieces(rhs, &rhs_elem, &rhs_order);
-
-    // if rhs doesn't include every element included by lhs
-    if (!std::includes(rhs_elem.begin(), rhs_elem.end(),
-                       lhs_elem.begin(), lhs_elem.end()))
-    {
-        return false;
-    }
-
-    // if rhs doesn't order every element that was ordered by lhs
-    //
-    // the above check and symmetry of interference means that rhs must have an
-    // order between every pair of elements ordered by lhs, so this will really
-    // fail when elements in rhs are ordered differently than those in lhs
-    if (!std::includes(rhs_order.begin(), rhs_order.end(),
-                       lhs_order.begin(), lhs_order.end()))
-    {
-        return false;
-    }
-
-    // a sequence of commands that were added to [lhs] to get [rhs]
-    // these are only in rhs;
-    std::vector<command> seq;
-    std::set_difference(rhs_elem.begin(), rhs_elem.end(),
-                        lhs_elem.begin(), lhs_elem.end(),
-                        std::inserter(seq, seq.begin()));
-    // sort for fast binary search
-    std::sort(seq.begin(), seq.end());
-
-    // check that for every pairwise ordering v, w in rhs:
-    //      if v in seq => w in seq
-    // if this is not true, then w is in lhs, and rhs cannot add an element
-    // earlier in the relation than lhs has and be considered >=
-    for (partial_order_t::iterator it = rhs_order.begin();
-            it != rhs_order.end(); ++it)
-    {
-        if (std::binary_search(seq.begin(), seq.end(), it->first) &&
-            !std::binary_search(seq.begin(), seq.end(), it->second))
+        if (!rhs.has_command(c))
         {
             return false;
         }
     }
 
-    return true;
+    return icstruct_compatible(lhs, rhs);
 }
 
 bool
-generalized_paxos :: cstruct_eq(const cstruct& lhs, const cstruct& rhs)
+generalized_paxos :: icstruct_eq(const internal_cstruct& lhs,
+                                 const internal_cstruct& rhs)
 {
-    if (lhs.commands.size() != rhs.commands.size())
-    {
-        return false;
-    }
-
-    std::vector<command> lhs_elem;
-    std::vector<command> rhs_elem;
-    partial_order_t lhs_order;
-    partial_order_t rhs_order;
-    cstruct_pieces(lhs, &lhs_elem, &lhs_order);
-    cstruct_pieces(rhs, &rhs_elem, &rhs_order);
-    return lhs_elem.size() == rhs_elem.size() && lhs_order.size() == rhs_order.size() &&
-           std::equal(lhs_elem.begin(), lhs_elem.end(), rhs_elem.begin()) &&
-           std::equal(lhs_order.begin(), lhs_order.end(), rhs_order.begin());
+    return lhs.ids.size() == rhs.ids.size() && icstruct_le(lhs, rhs);
 }
 
 bool
-generalized_paxos :: cstruct_compatible(const cstruct& lhs, const cstruct& rhs)
+generalized_paxos :: icstruct_compatible(const internal_cstruct& lhs,
+                                         const internal_cstruct& rhs)
 {
-    std::vector<command> lhs_elem;
-    std::vector<command> rhs_elem;
-    partial_order_t lhs_order;
-    partial_order_t rhs_order;
-    cstruct_pieces(lhs, &lhs_elem, &lhs_order);
-    cstruct_pieces(rhs, &rhs_elem, &rhs_order);
-
     // From the GP Tech Report:
     // [σ] and [τ] are compatible iff the subgraphs of G(σ) and G(τ) consisting
     // of the nodes they have in common are identical, and C does not conflict
@@ -786,218 +887,268 @@ generalized_paxos :: cstruct_compatible(const cstruct& lhs, const cstruct& rhs)
     // G(τ) that is not in G(σ).
     //
     // We will say σ=lhs and τ=rhs
+    const uint64_t N = std::max(lhs.transitive_closure_N,
+                                rhs.transitive_closure_N);
+    std::vector<uint64_t> Cs;
+    std::vector<uint64_t> Ds;
+    Cs.reserve(lhs.ids.size());
+    Ds.reserve(rhs.ids.size());
 
-    std::vector<command> C;
-    std::set_difference(lhs_elem.begin(), lhs_elem.end(),
-                        rhs_elem.begin(), rhs_elem.end(),
-                        std::back_inserter(C));
-    std::sort(C.begin(), C.end());
-    std::vector<command> D;
-    std::set_difference(rhs_elem.begin(), rhs_elem.end(),
-                        lhs_elem.begin(), lhs_elem.end(),
-                        std::back_inserter(D));
-    std::sort(D.begin(), D.end());
-
-    for (size_t c = 0; c < C.size(); ++c)
+    for (size_t i = 0; i < lhs.ids.size(); ++i)
     {
-        for (size_t d = 0; d < D.size(); ++d)
+        const uint64_t c = lhs.ids[i];
+        GP_ASSERT(lhs.has_command(c));
+
+        // If the command is in rhs, both posets must have the same transitive
+        // closure of commands that come before.
+        if (rhs.has_command(c))
         {
-            if (m_interfere->conflict(C[c], D[d]))
+            for (size_t n = 0; n < N; ++n)
+            {
+                if (lhs.are_adjacent(n, c) != rhs.are_adjacent(n, c))
+                {
+                    return false;
+                }
+            }
+        }
+        else
+        {
+            Cs.push_back(c);
+        }
+    }
+
+    for (size_t i = 0; i < rhs.ids.size(); ++i)
+    {
+        const uint64_t d = rhs.ids[i];
+        GP_ASSERT(rhs.has_command(d));
+
+        // If both have the command, its transitive closure was checked above,
+        // so only take the second half of the conditional from the above loop.
+        if (!lhs.has_command(d))
+        {
+            Ds.push_back(d);
+        }
+    }
+
+    for (size_t i = 0; i < Cs.size(); ++i)
+    {
+        for (size_t j = 0; j < Ds.size(); ++j)
+        {
+            if (m_interfere->conflict(id_command(Cs[i]), id_command(Ds[j])))
             {
                 return false;
             }
         }
     }
 
-    std::vector<command> commands_in_common;
-    std::set_intersection(lhs_elem.begin(), lhs_elem.end(),
-                          rhs_elem.begin(), rhs_elem.end(),
-                          std::back_inserter(commands_in_common));
-    std::sort(commands_in_common.begin(), commands_in_common.end());
-
-    partial_order_t edges_not_in_common;
-    std::set_symmetric_difference(lhs_order.begin(), lhs_order.end(),
-                                  rhs_order.begin(), rhs_order.end(),
-                                  std::inserter(edges_not_in_common,
-                                                edges_not_in_common.begin()));
-
-    for (partial_order_t::iterator it = edges_not_in_common.begin();
-            it != edges_not_in_common.end(); ++it)
-    {
-        if (std::binary_search(commands_in_common.begin(),
-                               commands_in_common.end(),
-                               it->first) &&
-            std::binary_search(commands_in_common.begin(),
-                               commands_in_common.end(),
-                               it->second))
-        {
-            return false;
-        }
-    }
-
     return true;
 }
 
-generalized_paxos::cstruct
-generalized_paxos :: cstruct_glb(const cstruct& lhs, const cstruct& rhs, bool* conflict)
+void
+generalized_paxos :: icstruct_glb(const internal_cstruct** ics, size_t ics_sz,
+                                  internal_cstruct* ret, bool* conflict)
 {
-    std::vector<command> lhs_cmds;
-    std::vector<command> rhs_cmds;
-    partial_order_t edge_list;
-    cstruct_pieces(lhs, &lhs_cmds, &edge_list);
-    cstruct_pieces(rhs, &rhs_cmds, &edge_list);
-    std::vector<command> all_cmds;
-    std::set_union(lhs_cmds.begin(), lhs_cmds.end(),
-                   rhs_cmds.begin(), rhs_cmds.end(),
-                   std::back_inserter(all_cmds));
-    std::sort(all_cmds.begin(), all_cmds.end());
+    uint64_t min_N = UINT64_MAX;
+    uint64_t max_N = 0;
 
-    // determine commands to exclude
-    std::vector<command> exclude;
-    exclude.reserve(lhs_cmds.size() + rhs_cmds.size());
-    std::set_symmetric_difference(lhs_cmds.begin(), lhs_cmds.end(),
-                                  rhs_cmds.begin(), rhs_cmds.end(),
-                                  std::back_inserter(exclude));
-
-    for (size_t i = 0; i < all_cmds.size(); ++i)
+    for (size_t i = 0; i < ics_sz; ++i)
     {
-        const command& e(all_cmds[i]);
-
-        if (directed_path_exists(e, e, edge_list))
-        {
-            *conflict = true;
-            exclude.push_back(e);
-        }
+        min_N = std::min(min_N, ics[i]->transitive_closure_N);
+        max_N = std::max(max_N, ics[i]->transitive_closure_N);
     }
 
-    for (size_t i = 0; i < exclude.size(); ++i)
+    *ret = internal_cstruct();
+
+    if (ics_sz == 0)
     {
-        const command& u(exclude[i]);
+        return;
+    }
 
-        for (size_t j = 0; j < all_cmds.size(); ++j)
+    ret->set_N(min_N);
+
+    std::vector<size_t> adjmat;
+    adjmat.resize(max_N * max_N);
+
+    for (size_t i = 0; i < adjmat.size(); ++i)
+    {
+        adjmat[i] = 0;
+    }
+
+    // Compute an adjacency matrix for a directed, weighted graph.  Vertices in
+    // the graph are the internal, consecutively assigned ids for commands.  An
+    // edge u, v exists in the graph iff a transitive relation between u, v
+    // exists in any of the internal cstructs.  The weight of the edge indicates
+    // the number of cstructs that have the edge.
+    //
+    // Ignoring the edge weights, this graph is equivalent to its transitive
+    // closure because the internal cstructs' transitive closures are
+    // pre-computed.  The weights don't represent anything about the transitive
+    // closure or path lengths.
+    //
+    // The first max_N entries of adjmat represent the commands ordered before
+    // command 0.  In general entries [max_N * i, max_N * (i +1)) represent the
+    // all commands ordered before command i.
+    for (size_t i = 0; i < ics_sz; ++i)
+    {
+        for (size_t j = 0; j < max_N; ++j)
         {
-            const command& v(all_cmds[j]);
-
-            if (directed_path_exists(u, v, edge_list) &&
-                std::find(exclude.begin(), exclude.end(), v) == exclude.end())
+            for (size_t k = 0; k < max_N; ++k)
             {
-                exclude.push_back(v);
+                if (ics[i]->are_adjacent(j, k))
+                {
+                    ++adjmat[k * max_N + j];
+                }
             }
         }
     }
 
-    std::sort(exclude.begin(), exclude.end());
-    std::vector<command>::iterator it;
-    it = std::unique(exclude.begin(), exclude.end());
-    exclude.resize(it - exclude.begin());
+    std::vector<bool> conflicts;
+    conflicts.resize(max_N, false);
 
-    // create a new cstruct including only those commands that are not excluded
-    cstruct tmp;
+    // Figure out which commands belong to the glb and detect conflicts.
+    //
+    // A conflict exists if there is a cycle.  Because adjmat is transitively
+    // closed, we can simply check for each edge u,v that exists that edge v,u
+    // does not exist.
+    //
+    // A command/vertex belongs to the glb iff every command preceding it has
+    // the same weight and that weight equals the total number of cstructs and
+    // the command is not part of a conflict.
+    //
+    // Do a first pass to mark conflicted values.
+    // Do a second pass to deletect values belonging to glb.
 
-    for (size_t i = 0; i < lhs.commands.size(); ++i)
+    for (size_t i = 0; i < max_N; ++i)
     {
-        const command& c(lhs.commands[i]);
-
-        if (!std::binary_search(exclude.begin(), exclude.end(), c))
+        for (size_t j = 0; j < max_N; ++j)
         {
-            tmp.commands.push_back(c);
+            if (i == j)
+            {
+                continue;
+            }
+
+            uint64_t forward_count = adjmat[i * max_N + j];
+            uint64_t reverse_count = adjmat[j * max_N + i];
+
+            if (forward_count > 0 && reverse_count > 0)
+            {
+                *conflict = true;
+                conflicts[i] = true;
+                conflicts[j] = true;
+            }
         }
     }
 
-    return tmp;
-}
-
-generalized_paxos::cstruct
-generalized_paxos :: cstruct_lub(const cstruct& lhs, const cstruct& rhs)
-{
-#if GENERALIZED_PAXOS_DEBUG
-    assert(cstruct_compatible(lhs, rhs));
-#endif
-    std::vector<command> lhs_elem(lhs.commands);
-    std::vector<command> rhs_elem(rhs.commands);
-    std::sort(lhs_elem.begin(), lhs_elem.end());
-    std::sort(rhs_elem.begin(), rhs_elem.end());
-
-    std::vector<command> D;
-    std::set_difference(rhs_elem.begin(), rhs_elem.end(),
-                        lhs_elem.begin(), lhs_elem.end(),
-                        std::back_inserter(D));
-    std::sort(D.begin(), D.end());
-    cstruct tmp(lhs);
-
-    for (size_t i = 0; i < rhs.commands.size(); ++i)
+    for (size_t i = 0; i < max_N; ++i)
     {
-        if (std::binary_search(D.begin(), D.end(), rhs.commands[i]))
+        // Assume it belongs; prove otherwise
+        bool belongs_to_glb = !conflicts[i];
+
+        for (size_t j = 0; j < max_N; ++j)
         {
-            tmp.commands.push_back(rhs.commands[i]);
+            uint64_t forward_count = adjmat[i * max_N + j];
+
+            if (i == j && forward_count != ics_sz)
+            {
+                belongs_to_glb = false;
+            }
+
+            if (forward_count > 0 &&
+                (forward_count < ics_sz || conflicts[j]))
+            {
+                belongs_to_glb = false;
+            }
+        }
+
+        assert(!belongs_to_glb || i < min_N);
+
+        if (belongs_to_glb)
+        {
+            ret->set_adjacent(i, i);
         }
     }
 
-    return tmp;
+    for (size_t i = 0; i < ics[0]->ids.size(); ++i)
+    {
+        if (ret->has_command(ics[0]->ids[i]))
+        {
+            ret->ids.push_back(ics[0]->ids[i]);
+        }
+    }
+
+    for (uint64_t i = 0; i < ret->ids.size(); ++i)
+    {
+        const command& x(id_command(ret->ids[i]));
+
+        for (uint64_t j = i + 1; j < ret->ids.size(); ++j)
+        {
+            const command& y(id_command(ret->ids[j]));
+
+            if (m_interfere->conflict(x, y))
+            {
+                ret->set_adjacent(ret->ids[i], ret->ids[j]);
+            }
+        }
+    }
+
+    ret->close_transitively();
 }
 
 void
-generalized_paxos :: cstruct_pieces(const cstruct& c,
-                                    std::vector<command>* commands,
-                                    partial_order_t* order)
+generalized_paxos :: icstruct_lub(const internal_cstruct** ics, size_t ics_sz, internal_cstruct* ret)
 {
-    if (commands)
+#if GENERALIZED_PAXOS_DEBUG
+    for (size_t i = 0; i < ics_sz; ++i)
     {
-        *commands = c.commands;
-        std::sort(commands->begin(), commands->end());
-    }
-
-    for (size_t i = 0; i < c.commands.size(); ++i)
-    {
-        const command& v(c.commands[i]);
-
-        for (size_t j = i + 1; j < c.commands.size(); ++j)
+        for (size_t j = i + 1; j < ics_sz; ++j)
         {
-            const command& w(c.commands[j]);
-
-            if (m_interfere->conflict(v, w))
-            {
-                order->insert(std::make_pair(v, w));
-            }
+            GP_ASSERT(icstruct_compatible(*ics[i], *ics[j]));
+            GP_ASSERT(icstruct_compatible(*ics[j], *ics[i]));
         }
     }
-}
+#endif
 
-bool
-generalized_paxos :: directed_path_exists(const command& from,
-                                          const command& to,
-                                          const partial_order_t& edge_list)
-{
-    std::set<command> seen;
-    return directed_path_exists(from, to, edge_list, &seen);
-}
+    uint64_t N = 0;
 
-bool
-generalized_paxos :: directed_path_exists(const command& from,
-                                          const command& to,
-                                          const partial_order_t& edge_list,
-                                          std::set<command>* seen)
-{
-    for (partial_order_t::iterator it = edge_list.lower_bound(std::make_pair(from, command()));
-            it != edge_list.end() && it->first == from; ++it)
+    for (size_t i = 0; i < ics_sz; ++i)
     {
-        if (it->second == to)
-        {
-            return true;
-        }
+        N = std::max(N, ics[i]->transitive_closure_N);
+    }
 
-        if (seen->find(it->second) == seen->end())
-        {
-            seen->insert(it->second);
+    *ret = internal_cstruct();
+    ret->set_N(N);
 
-            if (directed_path_exists(it->second, to, edge_list, seen))
+    for (size_t i = 0; i < ics_sz; ++i)
+    {
+        for (size_t j = 0; j < ics[i]->ids.size(); ++j)
+        {
+            uint64_t c = ics[i]->ids[j];
+
+            if (!ret->has_command(c))
             {
-                return true;
+                ret->ids.push_back(c);
+                ret->set_adjacent(c, c);
+                GP_ASSERT(ret->has_command(c));
             }
         }
     }
 
-    return false;
+    for (uint64_t i = 0; i < ret->ids.size(); ++i)
+    {
+        const command& x(id_command(ret->ids[i]));
+
+        for (uint64_t j = i + 1; j < ret->ids.size(); ++j)
+        {
+            const command& y(id_command(ret->ids[j]));
+
+            if (m_interfere->conflict(x, y))
+            {
+                ret->set_adjacent(ret->ids[i], ret->ids[j]);
+            }
+        }
+    }
+
+    ret->close_transitively();
 }
 
 generalized_paxos :: command :: command()
@@ -1336,6 +1487,25 @@ consus :: operator << (std::ostream& lhs, const generalized_paxos::message_p2b& 
     return lhs << "message_p2b(b=" << m2b.b
                << ", acceptor=" << m2b.acceptor
                << ", v=" << m2b.v;
+}
+
+std::ostream&
+consus :: operator << (std::ostream& lhs, const generalized_paxos::internal_cstruct& rhs)
+{
+    lhs << "[";
+
+    for (size_t i = 0; i < rhs.ids.size(); ++i)
+    {
+        if (i > 0)
+        {
+            lhs << ", ";
+        }
+
+        lhs << rhs.ids[i];
+    }
+
+    lhs << "]";
+    return lhs;
 }
 
 e::packer

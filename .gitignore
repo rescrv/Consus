@@ -64,3 +64,5 @@
 /stamp-h1
 /test/paxos/generalized
 /test/paxos/generalized-brute-force
+/test/paxos/generalized-counter-example-generator
+/test/paxos/generalized-performance

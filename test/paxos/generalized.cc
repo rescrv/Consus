@@ -272,3 +272,847 @@ TEST(GeneralizedPaxos, Conflict)
     ASSERT_FALSE(send_m2);
     ASSERT_TRUE(send_m3);
 }
+
+generalized_paxos::cstruct
+cons(generalized_paxos::cstruct cs, generalized_paxos::command c)
+{
+    cs.commands.push_back(c);
+    return cs;
+}
+
+TEST(GeneralizedPaxos, Bug1)
+{
+bool throwaway_bool;
+generalized_paxos::message_p1a throwaway_p1a;
+generalized_paxos::message_p1b throwaway_p1b;
+generalized_paxos::message_p2a throwaway_p2a;
+generalized_paxos::message_p2b throwaway_p2b;
+abstract_id ids[5];
+
+for (unsigned i = 0; i < 5; ++i)
+{
+    ids[i] = abstract_id(i + 1);
+}
+
+generalized_paxos gp;
+gp.init(&acc, ids[1], &ids[0], 5);
+// command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")
+gp.propose(generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)));
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")
+gp.propose(generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)));
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p1a(b=ballot(type=FAST, number=1, leader=1))
+gp.process_p1a(generalized_paxos::message_p1a(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1))), &throwaway_bool, &throwaway_p1b);
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(2), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(2), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(2), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(2), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")
+gp.propose(generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)));
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1a(b=ballot(type=CLASSIC, number=2, leader=1))
+gp.process_p1a(generalized_paxos::message_p1a(generalized_paxos::ballot(generalized_paxos::ballot::CLASSIC, 2, abstract_id(1))), &throwaway_bool, &throwaway_p1b);
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p1b(b=ballot(type=CLASSIC, number=2, leader=1), acceptor=abstract(2), vb=ballot(type=FAST, number=1, leader=1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::CLASSIC, 2, abstract_id(1)), abstract_id(2), generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=CLASSIC, number=2, leader=1), acceptor=abstract(3), vb=ballot(type=FAST, number=1, leader=1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::CLASSIC, 2, abstract_id(1)), abstract_id(3), generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")
+gp.propose(generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)));
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+}
+
+
+TEST(GeneralizedPaxos, Bug2)
+{
+// =============================================================================
+// abstract(4) errored out
+bool throwaway_bool;
+generalized_paxos::message_p1a throwaway_p1a;
+generalized_paxos::message_p1b throwaway_p1b;
+generalized_paxos::message_p2a throwaway_p2a;
+generalized_paxos::message_p2b throwaway_p2b;
+abstract_id ids[5];
+
+for (unsigned i = 0; i < 5; ++i)
+{
+    ids[i] = abstract_id(i + 1);
+}
+
+generalized_paxos gp;
+gp.init(&acc, ids[3], &ids[0], 5);
+// command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")
+gp.propose(generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)));
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p1a(b=ballot(type=FAST, number=1, leader=1))
+gp.process_p1a(generalized_paxos::message_p1a(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1))), &throwaway_bool, &throwaway_p1b);
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(2), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(2), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")
+gp.propose(generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)));
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(2), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(2), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")
+gp.propose(generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)));
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1a(b=ballot(type=CLASSIC, number=2, leader=1))
+gp.process_p1a(generalized_paxos::message_p1a(generalized_paxos::ballot(generalized_paxos::ballot::CLASSIC, 2, abstract_id(1))), &throwaway_bool, &throwaway_p1b);
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p1b(b=ballot(type=CLASSIC, number=2, leader=1), acceptor=abstract(2), vb=ballot(type=FAST, number=1, leader=1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::CLASSIC, 2, abstract_id(1)), abstract_id(2), generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=CLASSIC, number=2, leader=1), acceptor=abstract(3), vb=ballot(type=FAST, number=1, leader=1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::CLASSIC, 2, abstract_id(1)), abstract_id(3), generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+}
+
+
+TEST(GeneralizedPaxos, Bug3)
+{
+// =============================================================================
+// abstract(3) errored out
+bool throwaway_bool;
+generalized_paxos::message_p1a throwaway_p1a;
+generalized_paxos::message_p1b throwaway_p1b;
+generalized_paxos::message_p2a throwaway_p2a;
+generalized_paxos::message_p2b throwaway_p2b;
+abstract_id ids[5];
+
+for (unsigned i = 0; i < 5; ++i)
+{
+    ids[i] = abstract_id(i + 1);
+}
+
+generalized_paxos gp;
+gp.init(&acc, ids[2], &ids[0], 5);
+// command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")
+gp.propose(generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)));
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p1a(b=ballot(type=FAST, number=1, leader=1))
+gp.process_p1a(generalized_paxos::message_p1a(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1))), &throwaway_bool, &throwaway_p1b);
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")
+gp.propose(generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)));
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(2), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(2), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(2), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(2), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")
+gp.propose(generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)));
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1a(b=ballot(type=CLASSIC, number=2, leader=1))
+gp.process_p1a(generalized_paxos::message_p1a(generalized_paxos::ballot(generalized_paxos::ballot::CLASSIC, 2, abstract_id(1))), &throwaway_bool, &throwaway_p1b);
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p1b(b=ballot(type=CLASSIC, number=2, leader=1), acceptor=abstract(2), vb=ballot(type=FAST, number=1, leader=1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::CLASSIC, 2, abstract_id(1)), abstract_id(2), generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=CLASSIC, number=2, leader=1), acceptor=abstract(3), vb=ballot(type=FAST, number=1, leader=1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::CLASSIC, 2, abstract_id(1)), abstract_id(3), generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")
+gp.propose(generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)));
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+}
+
+
+TEST(GeneralizedPaxos, Bug4)
+{
+// =============================================================================
+// abstract(1) errored out
+bool throwaway_bool;
+generalized_paxos::message_p1a throwaway_p1a;
+generalized_paxos::message_p1b throwaway_p1b;
+generalized_paxos::message_p2a throwaway_p2a;
+generalized_paxos::message_p2b throwaway_p2b;
+abstract_id ids[5];
+
+for (unsigned i = 0; i < 5; ++i)
+{
+    ids[i] = abstract_id(i + 1);
+}
+
+generalized_paxos gp;
+gp.init(&acc, ids[0], &ids[0], 5);
+// command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")
+gp.propose(generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)));
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p1a(b=ballot(type=FAST, number=1, leader=1))
+gp.process_p1a(generalized_paxos::message_p1a(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1))), &throwaway_bool, &throwaway_p1b);
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(2), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(2), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(2), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(2), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")
+gp.propose(generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)));
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")
+gp.propose(generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)));
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")
+gp.propose(generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)));
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1a(b=ballot(type=CLASSIC, number=2, leader=1))
+gp.process_p1a(generalized_paxos::message_p1a(generalized_paxos::ballot(generalized_paxos::ballot::CLASSIC, 2, abstract_id(1))), &throwaway_bool, &throwaway_p1b);
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p1b(b=ballot(type=CLASSIC, number=2, leader=1), acceptor=abstract(2), vb=ballot(type=FAST, number=1, leader=1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::CLASSIC, 2, abstract_id(1)), abstract_id(2), generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=CLASSIC, number=2, leader=1), acceptor=abstract(3), vb=ballot(type=FAST, number=1, leader=1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::CLASSIC, 2, abstract_id(1)), abstract_id(3), generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(true, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+}
+
+
+TEST(GeneralizedPaxos, Bug5)
+{
+// =============================================================================
+// abstract(5) errored out
+bool throwaway_bool;
+generalized_paxos::message_p1a throwaway_p1a;
+generalized_paxos::message_p1b throwaway_p1b;
+generalized_paxos::message_p2a throwaway_p2a;
+generalized_paxos::message_p2b throwaway_p2b;
+abstract_id ids[5];
+
+for (unsigned i = 0; i < 5; ++i)
+{
+    ids[i] = abstract_id(i + 1);
+}
+
+generalized_paxos gp;
+gp.init(&acc, ids[4], &ids[0], 5);
+// message_p1a(b=ballot(type=FAST, number=1, leader=1))
+gp.process_p1a(generalized_paxos::message_p1a(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1))), &throwaway_bool, &throwaway_p1b);
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")
+gp.propose(generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)));
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(2), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(2), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(2), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(2), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), vb=ballot(type=CLASSIC, number=0, leader=0), v=cstruct([])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), generalized_paxos::ballot(), generalized_paxos::cstruct()))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")
+gp.propose(generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)));
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(3), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(3), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")
+gp.propose(generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)));
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(4), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(4), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(5), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(5), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1a(b=ballot(type=CLASSIC, number=2, leader=1))
+gp.process_p1a(generalized_paxos::message_p1a(generalized_paxos::ballot(generalized_paxos::ballot::CLASSIC, 2, abstract_id(1))), &throwaway_bool, &throwaway_p1b);
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+
+// message_p1b(b=ballot(type=CLASSIC, number=2, leader=1), acceptor=abstract(2), vb=ballot(type=FAST, number=1, leader=1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00")])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::CLASSIC, 2, abstract_id(1)), abstract_id(2), generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p1b(b=ballot(type=CLASSIC, number=2, leader=1), acceptor=abstract(3), vb=ballot(type=FAST, number=1, leader=1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p1b(generalized_paxos::message_p1b(generalized_paxos::ballot(generalized_paxos::ballot::CLASSIC, 2, abstract_id(1)), abstract_id(3), generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+
+// message_p2b(b=ballot(type=FAST, number=1, leader=1), acceptor=abstract(1), v=cstruct([command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x00"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x01"), command(type=1, value="\x00\x00\x00\x00\x00\x00\x00\x02")])
+if (gp.process_p2b(generalized_paxos::message_p2b(generalized_paxos::ballot(generalized_paxos::ballot::FAST, 1, abstract_id(1)), abstract_id(1), cons(cons(cons(generalized_paxos::cstruct(), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x00", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x01", 8))), generalized_paxos::command(1, std::string("\x00\x00\x00\x00\x00\x00\x00\x02", 8)))))) {
+gp.advance(false, &throwaway_bool, &throwaway_p1a, &throwaway_bool, &throwaway_p2a, &throwaway_bool, &throwaway_p2b);
+gp.learned();
+}
+}

@@ -29,6 +29,7 @@
 #define consus_txman_generalized_paxos_h_
 
 // STL
+#include <map>
 #include <set>
 #include <string>
 
@@ -195,43 +196,57 @@ class generalized_paxos
             LEADING_PHASE1,
             LEADING_PHASE2
         };
+        struct internal_cstruct
+        {
+            internal_cstruct();
+            ~internal_cstruct() throw ();
+
+            bool has_command(uint64_t c) const;
+            bool are_adjacent(uint64_t u, uint64_t v) const;
+            void set_adjacent(uint64_t u, uint64_t v);
+
+            void set_N(uint64_t N);
+            void close_transitively();
+            void swap(internal_cstruct* other);
+
+            uint64_t byte(uint64_t u, uint64_t v) const;
+            uint64_t bit(uint64_t u, uint64_t v) const;
+
+            std::vector<uint64_t> ids;
+            std::vector<uint64_t> transitive_closure;
+            uint64_t transitive_closure_N;
+        };
+        typedef std::map<command, uint64_t> command_map_t;
+        friend std::ostream& operator << (std::ostream& lhs, const internal_cstruct& rhs);
 
     private:
         size_t index_of(abstract_id a);
         size_t quorum();
-        void learned(cstruct* l, bool* conflict);
-        void learned(const ballot& b, std::vector<cstruct>* lv, bool* conflict);
-        void learned(cstruct** vs, size_t vs_sz, size_t max_sz,
-                     std::vector<cstruct>* lv, bool* conflict);
-        void learned(cstruct** vs, size_t vs_sz, cstruct* v, bool* conflict);
-        cstruct proven_safe();
+        void learned(internal_cstruct* l, bool* conflict);
+        void learned(const ballot& b, std::vector<internal_cstruct>* lv, bool* conflict);
+        void learned(const internal_cstruct** vs, size_t vs_sz, size_t max_sz,
+                     std::vector<internal_cstruct>* lv, bool* conflict);
+        void proven_safe(internal_cstruct* ics);
+
+        // command manipulation
+        const command& id_command(uint64_t c);
+        uint64_t command_id(const command& c);
 
         // cstructs are command histories as described in the paper,
         // not sequences
-        typedef std::set<std::pair<command, command> > partial_order_t;
-        bool cstruct_lt(const cstruct& lhs, const cstruct& rhs);
-        bool cstruct_le(const cstruct& lhs, const cstruct& rhs);
-        bool cstruct_eq(const cstruct& lhs, const cstruct& rhs);
-        bool cstruct_compatible(const cstruct& lhs, const cstruct& rhs);
-        cstruct cstruct_glb(const cstruct& lhs, const cstruct& rhs, bool* conflict);
-        cstruct cstruct_lub(const cstruct& lhs, const cstruct& rhs);
-
-        // from the cstruct, returns a sorted list of commands, a list of edges
-        // defined according to m_interfere
-        //
-        // will not clear commands or order
-        void cstruct_pieces(const cstruct& c,
-                            std::vector<command>* commands,
-                            partial_order_t* order);
-
-        // Graph operations on the partial order over commands
-        static bool directed_path_exists(const command& from,
-                                         const command& to,
-                                         const partial_order_t& edge_list);
-        static bool directed_path_exists(const command& from,
-                                         const command& to,
-                                         const partial_order_t& edge_list,
-                                         std::set<command>* seen);
+        void cstruct_to_icstruct(const cstruct& cs, internal_cstruct* ics);
+        void icstruct_to_cstruct(const internal_cstruct& ics, cstruct* cs);
+        bool icstruct_lt(const internal_cstruct& lhs,
+                         const internal_cstruct& rhs);
+        bool icstruct_le(const internal_cstruct& lhs,
+                         const internal_cstruct& rhs);
+        bool icstruct_eq(const internal_cstruct& lhs,
+                         const internal_cstruct& rhs);
+        bool icstruct_compatible(const internal_cstruct& lhs,
+                                 const internal_cstruct& rhs);
+        void icstruct_glb(const internal_cstruct** ics, size_t ics_sz,
+                          internal_cstruct* ret, bool* conflict);
+        void icstruct_lub(const internal_cstruct** ics, size_t ics_sz, internal_cstruct* ret);
 
     private:
         bool m_init;
@@ -239,18 +254,25 @@ class generalized_paxos
         state_t m_state;
         abstract_id m_us;
         std::vector<abstract_id> m_acceptors;
-        std::set<command> m_proposed;
+        std::vector<command> m_proposed;
+        std::vector<command> m_commands;
+        command_map_t m_command_ids;
 
         ballot m_acceptor_ballot;
         cstruct m_acceptor_value;
+        internal_cstruct m_acceptor_ivalue;
         ballot m_acceptor_value_src;
 
         ballot m_leader_ballot;
         cstruct m_leader_value;
+        internal_cstruct m_leader_ivalue;
         std::vector<message_p1b> m_promises;
+        std::vector<internal_cstruct> m_ipromises;
 
         std::vector<message_p2b> m_accepted;
-        cstruct m_learned_cached;
+        std::vector<internal_cstruct> m_iaccepted;
+
+        internal_cstruct m_learned_cached;
 
     private:
         generalized_paxos(const generalized_paxos&);
@@ -273,6 +295,8 @@ std::ostream&
 operator << (std::ostream& lhs, const generalized_paxos::message_p2a& m2a);
 std::ostream&
 operator << (std::ostream& lhs, const generalized_paxos::message_p2b& m2b);
+std::ostream&
+operator << (std::ostream& lhs, const generalized_paxos::internal_cstruct& rhs);
 
 e::packer
 operator << (e::packer pa, const generalized_paxos::command& rhs);
