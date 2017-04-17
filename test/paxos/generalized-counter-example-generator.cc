@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <queue>
 #include <sstream>
+#include <stdexcept>
 
 // po6
 #include <po6/threads/cond.h>
