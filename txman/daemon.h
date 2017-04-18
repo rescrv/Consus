@@ -117,6 +117,7 @@ class daemon
         void process_abort(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_wound(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_hold_lock(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
+        void process_finished(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_paxos_2a(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_paxos_2b(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
         void process_lv_vote_1a(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up);
@@ -144,6 +145,8 @@ class daemon
         uint64_t generate_nonce();
         transaction_id generate_txid();
         uint64_t resend_interval() { return PO6_SECONDS; }
+        bool transaction_guard(const transaction_id& txid, comm_id id);
+        bool transaction_guard(const transaction_group& tg, comm_id id);
         bool send(comm_id id, std::auto_ptr<e::buffer> msg);
         unsigned send(paxos_group_id g, std::auto_ptr<e::buffer> msg);
         unsigned send(const paxos_group& g, std::auto_ptr<e::buffer> msg);

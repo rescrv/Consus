@@ -628,6 +628,7 @@ daemon :: loop(size_t thread)
             case TXMAN_ABORT:
             case TXMAN_WOUND:
             case TXMAN_HOLD_LOCK:
+            case TXMAN_FINISHED:
             case TXMAN_PAXOS_2A:
             case TXMAN_PAXOS_2B:
             case LV_VOTE_1A:

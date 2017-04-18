@@ -274,7 +274,7 @@ bool
 transaction :: finished()
 {
     po6::threads::mutex::hold hold(&m_mtx);
-    return m_state == INITIALIZED || m_state == COLLECTED;
+    return m_state == INITIALIZED || m_state == GARBAGE_COLLECT;
 }
 
 void
@@ -1117,7 +1117,8 @@ transaction :: work_state_machine(daemon* d)
         case ABORTED:
             return work_state_machine_aborted(d);
         case TERMINATED:
-        case COLLECTED:
+            return work_state_machine_terminated(d);
+        case GARBAGE_COLLECT:
             break;
         default:
             ::abort();
@@ -1247,7 +1248,6 @@ transaction :: work_state_machine_local_commit_vote(daemon* d)
         {
             LOG_IF(INFO, s_debug_mode) << logid() << " data center vote chose COMMIT; transitioning to COMMITTED state";
             m_state = COMMITTED;
-            record_commit(d);
         }
         else
         {
@@ -1262,7 +1262,6 @@ transaction :: work_state_machine_local_commit_vote(daemon* d)
         {
             LOG_IF(INFO, s_debug_mode) << logid() << " data center vote chose ABORT; transitioning to ABORTED state";
             m_state = ABORTED;
-            record_abort(d);
         }
         else
         {
@@ -1367,13 +1366,11 @@ transaction :: work_state_machine_global_commit_vote(daemon* d)
     {
         LOG_IF(INFO, s_debug_mode) << logid() << " global vote chose COMMIT; transitioning to COMMITTED state";
         m_state = COMMITTED;
-        record_commit(d);
     }
     else if (outcome == CONSUS_VOTE_ABORT)
     {
         LOG_IF(INFO, s_debug_mode) << logid() << " global vote chose ABORT; transitioning to ABORTED state";
         m_state = ABORTED;
-        record_abort(d);
     }
     else
     {
@@ -1423,6 +1420,7 @@ transaction :: work_state_machine_committed(daemon* d)
     if (done == non_nop)
     {
         send_tx_commit(d);
+        record_disposition_commit(d);
         LOG_IF(INFO, s_debug_mode) << logid() << " transitioning to TERMINATED state";
         m_state = TERMINATED;
         return work_state_machine(d);
@@ -1462,9 +1460,19 @@ transaction :: work_state_machine_aborted(daemon* d)
     if (done == non_nop)
     {
         send_tx_abort(d);
+        record_disposition_abort(d);
         LOG_IF(INFO, s_debug_mode) << logid() << " transitioning to TERMINATED state";
         m_state = TERMINATED;
         return work_state_machine(d);
+    }
+}
+
+void
+transaction :: work_state_machine_terminated(daemon* d)
+{
+    if (d->m_dispositions.has(m_tg))
+    {
+        m_state = GARBAGE_COLLECT;
     }
 }
 
@@ -1663,13 +1671,13 @@ transaction :: generate_log_entry(uint64_t seqno)
 }
 
 void
-transaction :: record_commit(daemon* d)
+transaction :: record_disposition_commit(daemon* d)
 {
     d->m_dispositions.put(m_tg, CONSUS_VOTE_COMMIT);
 }
 
 void
-transaction :: record_abort(daemon* d)
+transaction :: record_disposition_abort(daemon* d)
 {
     d->m_dispositions.put(m_tg, CONSUS_VOTE_ABORT);
 }
@@ -1923,7 +1931,7 @@ consus :: operator << (std::ostream& lhs, const transaction::state_t& rhs)
         STRINGIFYNS(transaction, COMMITTED);
         STRINGIFYNS(transaction, ABORTED);
         STRINGIFYNS(transaction, TERMINATED);
-        STRINGIFYNS(transaction, COLLECTED);
+        STRINGIFYNS(transaction, GARBAGE_COLLECT);
         default:
             lhs << "bad state";
     }

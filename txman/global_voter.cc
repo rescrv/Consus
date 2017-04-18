@@ -186,7 +186,7 @@ bool
 global_voter :: finished()
 {
     po6::threads::mutex::hold hold(&m_mtx);
-    return (!m_data_center_init && !m_global_init)/* XXX || m_outcome_in_dispositions*/;
+    return (!m_data_center_init && !m_global_init) || m_outcome_in_dispositions;
 }
 
 bool
@@ -512,6 +512,12 @@ void
 global_voter :: externally_work_state_machine(daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
+
+    if (!preconditions_for_data_center_paxos(d))
+    {
+        return;
+    }
+
     work_state_machine(d);
 }
 
@@ -788,7 +794,19 @@ global_voter :: preconditions_for_data_center_paxos(daemon* d)
 {
     if (!m_data_center_init)
     {
+        if (d->m_dispositions.has(m_tg))
+        {
+            m_outcome_in_dispositions = true;
+            return false;
+        }
+
         const paxos_group* group = d->get_config()->get_group(m_tg.group);
+
+        if (!group)
+        {
+            return false;
+        }
+
         abstract_id data_center_acceptors[CONSUS_MAX_REPLICATION_FACTOR];
         copy(group->members, group->members_sz, data_center_acceptors);
         m_data_center_gp.init(m_data_center_cmp.get(), abstract_id(d->m_us.id.get()), data_center_acceptors, group->members_sz);
@@ -1062,6 +1080,11 @@ global_voter :: work_state_machine(daemon* d)
                 m_outcome = outcome;
             }
         }
+    }
+
+    if (d->m_dispositions.has(m_tg))
+    {
+        m_outcome_in_dispositions = true;
     }
 }
 

@@ -102,7 +102,7 @@ bool
 local_voter :: finished()
 {
     po6::threads::mutex::hold hold(&m_mtx);
-    return !m_initialized /* XXX || m_outcome_in_dispositions*/;
+    return !m_initialized || m_outcome_in_dispositions;
 }
 
 void
@@ -456,6 +456,12 @@ local_voter :: preconditions_for_paxos(daemon* d)
 {
     if (!m_initialized)
     {
+        if (d->m_dispositions.has(m_tg))
+        {
+            m_outcome_in_dispositions = true;
+            return false;
+        }
+
         const paxos_group* group = d->get_config()->get_group(m_tg.group);
 
         if (!group)

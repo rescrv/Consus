@@ -51,6 +51,7 @@ enum network_msgtype
     TXMAN_ABORT     = 7428,
     TXMAN_WOUND     = 7429,
     TXMAN_HOLD_LOCK = 7430,
+    TXMAN_FINISHED  = 7431,
 
     TXMAN_PAXOS_2A  = 7439,
     TXMAN_PAXOS_2B  = 7433,

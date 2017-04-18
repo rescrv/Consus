@@ -373,9 +373,7 @@ daemon :: run(bool background,
         {
             if (s_debug_mode)
             {
-                debug_dump();
                 LOG(INFO) << "enabling debug mode; will log all state transitions";
-                s_debug_dump = false;
             }
             else
             {
@@ -503,6 +501,9 @@ daemon :: loop(size_t thread)
                 break;
             case TXMAN_HOLD_LOCK:
                 process_hold_lock(id, msg, up);
+                break;
+            case TXMAN_FINISHED:
+                process_finished(id, msg, up);
                 break;
             case TXMAN_PAXOS_2A:
                 process_paxos_2a(id, msg, up);
@@ -642,19 +643,8 @@ daemon :: process_read(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
             >> table >> key;
     CHECK_UNPACK(TXMAN_READ, up);
 
-    configuration* c = get_config();
-
-    if (!c->get_group(txid.group))
+    if (transaction_guard(txid, id))
     {
-        LOG_IF(INFO, s_debug_mode) << "dropping read for " << txid
-                                   << " because the group is not in the configuration";
-        return;
-    }
-
-    if (!c->is_member(txid.group, m_us.id))
-    {
-        LOG_IF(INFO, s_debug_mode) << "dropping read for " << txid
-                                   << " this server is not part of the group";
         return;
     }
 
@@ -679,10 +669,8 @@ daemon :: process_write(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up
             >> table >> key >> value;
     CHECK_UNPACK(TXMAN_WRITE, up);
 
-    if (!get_config()->get_group(txid.group))
+    if (transaction_guard(txid, id))
     {
-        LOG_IF(INFO, s_debug_mode) << "dropping it because " << txid.group
-                                   << " not in configuration";
         return;
     }
 
@@ -703,10 +691,8 @@ daemon :: process_commit(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
             >> e::unpack_varint(seqno);
     CHECK_UNPACK(TXMAN_COMMIT, up);
 
-    if (!get_config()->get_group(txid.group))
+    if (transaction_guard(txid, id))
     {
-        LOG_IF(INFO, s_debug_mode) << "dropping it because " << txid.group
-                                   << " not in configuration";
         return;
     }
 
@@ -727,10 +713,8 @@ daemon :: process_abort(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
             >> e::unpack_varint(seqno);
     CHECK_UNPACK(TXMAN_ABORT, up);
 
-    if (!get_config()->get_group(txid.group))
+    if (transaction_guard(txid, id))
     {
-        LOG_IF(INFO, s_debug_mode) << "dropping it because " << txid.group
-                                   << " not in configuration";
         return;
     }
 
@@ -741,11 +725,16 @@ daemon :: process_abort(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
 }
 
 void
-daemon :: process_wound(comm_id, std::auto_ptr<e::buffer> msg, e::unpacker up)
+daemon :: process_wound(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
 {
     transaction_group tg;
     up = up >> tg;
     CHECK_UNPACK(TXMAN_WOUND, up);
+
+    if (transaction_guard(tg, id))
+    {
+        return;
+    }
 
     if (get_config()->is_member(tg.group, m_us.id))
     {
@@ -788,7 +777,46 @@ daemon :: process_hold_lock(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
 }
 
 void
-daemon :: process_paxos_2a(comm_id, std::auto_ptr<e::buffer> msg, e::unpacker up)
+daemon :: process_finished(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
+{
+    transaction_group tg;
+    uint64_t outcome;
+    up = up >> tg >> outcome;
+    CHECK_UNPACK(TXMAN_FINISHED, up);
+
+    if (outcome != CONSUS_VOTE_ABORT && outcome != CONSUS_VOTE_COMMIT)
+    {
+        LOG(ERROR) << "received nonsensical finished(" << tg
+                   << ", " << outcome << ") message from " << id;
+        return;
+    }
+
+    while (true)
+    {
+        if (m_dispositions.put_ine(tg, outcome))
+        {
+            break;
+        }
+        else
+        {
+            uint64_t old;
+
+            if (m_dispositions.get(tg, &old))
+            {
+                if (old != 0 && old != outcome)
+                {
+                    LOG(ERROR) << "received conflicting outcome for " << tg << " from " << id;
+                    outcome = old;
+                }
+
+                break;
+            }
+        }
+    }
+}
+
+void
+daemon :: process_paxos_2a(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
 {
     e::slice log_entry;
     up = up >> log_entry;
@@ -810,6 +838,11 @@ daemon :: process_paxos_2a(comm_id, std::auto_ptr<e::buffer> msg, e::unpacker up
         return;
     }
 
+    if (transaction_guard(tg, id))
+    {
+        return;
+    }
+
     transaction_map_t::state_reference tsr;
     transaction* xact = m_transactions.get_or_create_state(tg, &tsr);
     assert(xact);
@@ -823,6 +856,12 @@ daemon :: process_paxos_2b(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
     uint64_t seqno;
     up = up >> tg >> seqno;
     CHECK_UNPACK(TXMAN_PAXOS_2B, up);
+
+    if (transaction_guard(tg, id))
+    {
+        return;
+    }
+
     transaction_map_t::state_reference tsr;
     transaction* xact = m_transactions.get_or_create_state(tg, &tsr);
     assert(xact);
@@ -837,6 +876,12 @@ daemon :: process_lv_vote_1a(comm_id id, std::auto_ptr<e::buffer>, e::unpacker u
     paxos_synod::ballot b;
     up = up >> tg >> idx >> b;
     CHECK_UNPACK(LV_VOTE_1A, up);
+
+    if (transaction_guard(tg, id))
+    {
+        return;
+    }
+
     local_voter_map_t::state_reference lvsr;
     local_voter* lv = m_local_voters.get_or_create_state(tg, &lvsr);
     assert(lv);
@@ -852,6 +897,12 @@ daemon :: process_lv_vote_1b(comm_id id, std::auto_ptr<e::buffer>, e::unpacker u
     paxos_synod::pvalue p;
     up = up >> tg >> idx >> b >> p;
     CHECK_UNPACK(LV_VOTE_1B, up);
+
+    if (transaction_guard(tg, id))
+    {
+        return;
+    }
+
     local_voter_map_t::state_reference lvsr;
     local_voter* lv = m_local_voters.get_or_create_state(tg, &lvsr);
     assert(lv);
@@ -866,6 +917,12 @@ daemon :: process_lv_vote_2a(comm_id id, std::auto_ptr<e::buffer>, e::unpacker u
     paxos_synod::pvalue p;
     up = up >> tg >> idx >> p;
     CHECK_UNPACK(LV_VOTE_2A, up);
+
+    if (transaction_guard(tg, id))
+    {
+        return;
+    }
+
     local_voter_map_t::state_reference lvsr;
     local_voter* lv = m_local_voters.get_or_create_state(tg, &lvsr);
     assert(lv);
@@ -880,6 +937,12 @@ daemon :: process_lv_vote_2b(comm_id id, std::auto_ptr<e::buffer>, e::unpacker u
     paxos_synod::pvalue p;
     up = up >> tg >> idx >> p;
     CHECK_UNPACK(LV_VOTE_2B, up);
+
+    if (transaction_guard(tg, id))
+    {
+        return;
+    }
+
     local_voter_map_t::state_reference lvsr;
     local_voter* lv = m_local_voters.get_or_create_state(tg, &lvsr);
     assert(lv);
@@ -894,6 +957,12 @@ daemon :: process_lv_vote_learn(comm_id id, std::auto_ptr<e::buffer>, e::unpacke
     uint64_t v;
     up = up >> tg >> idx >> v;
     CHECK_UNPACK(LV_VOTE_LEARN, up);
+
+    if (transaction_guard(tg, id))
+    {
+        return;
+    }
+
     local_voter_map_t::state_reference lvsr;
     local_voter* lv = m_local_voters.get_or_create_state(tg, &lvsr);
     assert(lv);
@@ -905,19 +974,21 @@ daemon :: process_lv_vote_learn(comm_id id, std::auto_ptr<e::buffer>, e::unpacke
     {
         xact->externally_work_state_machine(this);
     }
-    else
-    {
-        LOG(INFO) << transaction_group::log(tg) + " data center voter: dropped learn from=" << id;
-    }
 }
 
 void
-daemon :: process_commit_record(comm_id, std::auto_ptr<e::buffer> msg, e::unpacker up)
+daemon :: process_commit_record(comm_id id, std::auto_ptr<e::buffer> msg, e::unpacker up)
 {
     transaction_group tg;
     e::slice commit_record;
     up = up >> tg >> commit_record;
     CHECK_UNPACK(COMMIT_RECORD, up);
+
+    if (transaction_guard(tg, id))
+    {
+        return;
+    }
+
     transaction_map_t::state_reference tsr;
     transaction* xact = m_transactions.get_or_create_state(tg, &tsr);
     assert(xact);
@@ -925,13 +996,18 @@ daemon :: process_commit_record(comm_id, std::auto_ptr<e::buffer> msg, e::unpack
 }
 
 void
-daemon :: process_gv_outcome(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
+daemon :: process_gv_outcome(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
     transaction_group tg;
     uint64_t index;
     uint64_t outcomes[CONSUS_MAX_REPLICATION_FACTOR];
     up = up >> tg >> e::unpack_varint(index) >> e::unpack_array<uint64_t>(outcomes, CONSUS_MAX_REPLICATION_FACTOR);
     CHECK_UNPACK(GV_OUTCOME, up);
+
+    if (transaction_guard(tg, id))
+    {
+        return;
+    }
 
     global_voter_map_t::state_reference gvsr;
     global_voter* gv = m_global_voters.get_or_create_state(tg, &gvsr);
@@ -950,12 +1026,17 @@ daemon :: process_gv_outcome(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
 }
 
 void
-daemon :: process_gv_propose(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
+daemon :: process_gv_propose(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
     transaction_group tg;
     generalized_paxos::command c;
     up = up >> tg >> c;
     CHECK_UNPACK(GV_PROPOSE, up);
+
+    if (transaction_guard(tg, id))
+    {
+        return;
+    }
 
     global_voter_map_t::state_reference gvsr;
     global_voter* gv = m_global_voters.get_or_create_state(tg, &gvsr);
@@ -981,6 +1062,11 @@ daemon :: process_gv_vote_1a(comm_id id, std::auto_ptr<e::buffer>, e::unpacker u
     up = up >> tg >> m;
     CHECK_UNPACK(GV_VOTE_1A, up);
 
+    if (transaction_guard(tg, id))
+    {
+        return;
+    }
+
     global_voter_map_t::state_reference gvsr;
     global_voter* gv = m_global_voters.get_or_create_state(tg, &gvsr);
     assert(gv);
@@ -998,12 +1084,17 @@ daemon :: process_gv_vote_1a(comm_id id, std::auto_ptr<e::buffer>, e::unpacker u
 }
 
 void
-daemon :: process_gv_vote_1b(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
+daemon :: process_gv_vote_1b(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
     transaction_group tg;
     generalized_paxos::message_p1b m;
     up = up >> tg >> m;
     CHECK_UNPACK(GV_VOTE_1B, up);
+
+    if (transaction_guard(tg, id))
+    {
+        return;
+    }
 
     global_voter_map_t::state_reference gvsr;
     global_voter* gv = m_global_voters.get_or_create_state(tg, &gvsr);
@@ -1029,6 +1120,11 @@ daemon :: process_gv_vote_2a(comm_id id, std::auto_ptr<e::buffer>, e::unpacker u
     up = up >> tg >> m;
     CHECK_UNPACK(GV_VOTE_2A, up);
 
+    if (transaction_guard(tg, id))
+    {
+        return;
+    }
+
     global_voter_map_t::state_reference gvsr;
     global_voter* gv = m_global_voters.get_or_create_state(tg, &gvsr);
     assert(gv);
@@ -1046,12 +1142,17 @@ daemon :: process_gv_vote_2a(comm_id id, std::auto_ptr<e::buffer>, e::unpacker u
 }
 
 void
-daemon :: process_gv_vote_2b(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
+daemon :: process_gv_vote_2b(comm_id id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
     transaction_group tg;
     generalized_paxos::message_p2b m;
     up = up >> tg >> m;
     CHECK_UNPACK(GV_VOTE_2B, up);
+
+    if (transaction_guard(tg, id))
+    {
+        return;
+    }
 
     global_voter_map_t::state_reference gvsr;
     global_voter* gv = m_global_voters.get_or_create_state(tg, &gvsr);
@@ -1276,6 +1377,32 @@ daemon :: generate_txid()
     size_t idx = x % groups.size();
     id = groups[idx];
     return transaction_id(id, po6::wallclock_time(), x);
+}
+
+bool
+daemon :: transaction_guard(const transaction_id& txid, comm_id id)
+{
+    return transaction_guard(transaction_group(txid), id);
+}
+
+bool
+daemon :: transaction_guard(const transaction_group& tg, comm_id id)
+{
+    uint64_t outcome = 0;
+
+    if (m_dispositions.get(tg, &outcome))
+    {
+        size_t sz = BUSYBEE_HEADER_SIZE
+                  + pack_size(TXMAN_FINISHED)
+                  + pack_size(tg)
+                  + sizeof(uint64_t);
+        std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
+        msg->pack_at(BUSYBEE_HEADER_SIZE) << TXMAN_FINISHED << tg << outcome;
+        send(id, msg);
+        return true;
+    }
+
+    return false;
 }
 
 bool
@@ -1718,11 +1845,22 @@ daemon :: pump()
             break;
         }
 
-        // a transaction implicitly pumps a local or global voter
         for (transaction_map_t::iterator it(&m_transactions); it.valid(); ++it)
         {
             transaction* xact = *it;
             xact->externally_work_state_machine(this);
+        }
+
+        for (local_voter_map_t::iterator it(&m_local_voters); it.valid(); ++it)
+        {
+            local_voter* lv = *it;
+            lv->externally_work_state_machine(this);
+        }
+
+        for (global_voter_map_t::iterator it(&m_global_voters); it.valid(); ++it)
+        {
+            global_voter* gv = *it;
+            gv->externally_work_state_machine(this);
         }
 
         m_gc.quiescent_state(&ts);

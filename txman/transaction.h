@@ -53,7 +53,7 @@ class transaction
             COMMITTED,
             ABORTED,
             TERMINATED,
-            COLLECTED
+            GARBAGE_COLLECT
         };
 
     public:
@@ -160,6 +160,7 @@ class transaction
         void work_state_machine_global_commit_vote(daemon* d);
         void work_state_machine_committed(daemon* d);
         void work_state_machine_aborted(daemon* d);
+        void work_state_machine_terminated(daemon* d);
 
         // execution utils
         void avoid_commit_if_possible(daemon* d);
@@ -178,8 +179,8 @@ class transaction
         std::string generate_log_entry(uint64_t seqno);
 
         // commit
-        void record_commit(daemon* d);
-        void record_abort(daemon* d);
+        void record_disposition_commit(daemon* d);
+        void record_disposition_abort(daemon* d);
 
         // message sending
         void send_paxos_2a(uint64_t i, daemon* d);

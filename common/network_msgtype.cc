@@ -48,6 +48,7 @@ consus :: operator << (std::ostream& lhs, network_msgtype rhs)
         STRINGIFY(TXMAN_ABORT);
         STRINGIFY(TXMAN_WOUND);
         STRINGIFY(TXMAN_HOLD_LOCK);
+        STRINGIFY(TXMAN_FINISHED);
         STRINGIFY(TXMAN_PAXOS_2A);
         STRINGIFY(TXMAN_PAXOS_2B);
         STRINGIFY(LV_VOTE_1A);
