@@ -1198,13 +1198,12 @@ transaction :: work_state_machine_executing(daemon* d)
     }
 
     daemon::local_voter_map_t::state_reference lvsr;
-    local_voter* lv = d->m_local_voters.get_or_create_state(m_tg, &lvsr);
-    assert(lv);
+    local_voter* lv = d->m_local_voters.get_state(m_tg, &lvsr);
     uint64_t outcome;
 
-    if (lv->outcome(&outcome))
+    if (lv && lv->outcome(&outcome))
     {
-        LOG_IF(INFO, s_debug_mode) << logid() << " short-circuiting operations to abort (possible deadlock prevention)";
+        LOG_IF(INFO, s_debug_mode) << logid() << " short-circuiting operations (possible deadlock prevention)";
         m_state = LOCAL_COMMIT_VOTE;
         return work_state_machine(d);
     }
