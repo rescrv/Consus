@@ -35,6 +35,7 @@
 #include <busybee.h>
 
 // consus
+#include "common/constants.h"
 #include "common/consus.h"
 #include "client/client.h"
 #include "client/pending_transaction_read.h"
@@ -149,6 +150,31 @@ pending_transaction_read :: handle_busybee_op(client* cl,
     {
         abort();
     }
+}
+
+bool
+pending_transaction_read :: transaction_finished(client* cl, const transaction_group& tg, uint64_t outcome)
+{
+    if (reinterpret_cast<transaction*>(m_xact)->txid() != tg.txid)
+    {
+        return false;
+    }
+
+    if (outcome == CONSUS_VOTE_COMMIT)
+    {
+        PENDING_ERROR(COMMITTED) << "transaction has been committed";
+    }
+    else if (outcome == CONSUS_VOTE_ABORT)
+    {
+        PENDING_ERROR(ABORTED) << "transaction has been aborted";
+    }
+    else
+    {
+        PENDING_ERROR(SERVER_ERROR) << "transaction terminated in state unknown to the client";
+    }
+
+    cl->add_to_returnable(this);
+    return true;
 }
 
 void

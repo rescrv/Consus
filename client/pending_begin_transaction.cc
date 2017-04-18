@@ -29,6 +29,7 @@
 #include <busybee.h>
 
 // consus
+#include "common/constants.h"
 #include "common/consus.h"
 #include "common/transaction_id.h"
 #include "client/client.h"
@@ -98,6 +99,31 @@ pending_begin_transaction :: handle_busybee_op(client* cl,
     *m_xact = reinterpret_cast<consus_transaction*>(t);
     this->success();
     cl->add_to_returnable(this);
+}
+
+bool
+pending_begin_transaction :: transaction_finished(client* cl, const transaction_group& tg, uint64_t outcome)
+{
+    if (m_xact && reinterpret_cast<transaction*>(m_xact)->txid() != tg.txid)
+    {
+        return false;
+    }
+
+    if (outcome == CONSUS_VOTE_COMMIT)
+    {
+        PENDING_ERROR(COMMITTED) << "transaction has been committed";
+    }
+    else if (outcome == CONSUS_VOTE_ABORT)
+    {
+        PENDING_ERROR(ABORTED) << "transaction has been aborted";
+    }
+    else
+    {
+        PENDING_ERROR(SERVER_ERROR) << "transaction terminated in state unknown to the client";
+    }
+
+    cl->add_to_returnable(this);
+    return true;
 }
 
 void

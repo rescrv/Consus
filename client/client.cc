@@ -704,14 +704,68 @@ client :: inner_loop(int timeout, consus_returncode* status)
     network_msgtype msg_type;
     uint64_t nonce;
     e::unpacker up = msg->unpack_from(BUSYBEE_HEADER_SIZE);
-    up = up >> msg_type >> nonce;
+    up = up >> msg_type;
 
-    if (up.error() || msg_type != CLIENT_RESPONSE)
+    if (up.error())
     {
         ERROR(SERVER_ERROR) << "communication error: server "
                             << cid_num << " sent message="
                             << msg->as_slice().hex()
                             << " with invalid header";
+        return -1;
+    }
+
+    if (msg_type == TXMAN_FINISHED)
+    {
+        transaction_group tg;
+        uint64_t outcome;
+        up = up >> tg >> outcome;
+
+        if (up.error())
+        {
+            ERROR(SERVER_ERROR) << "communication error: server "
+                                << cid_num << " sent invalid message="
+                                << msg->as_slice().hex()
+                                << " about a finished transaction";
+            return -1;
+        }
+
+        std::map<std::pair<comm_id, uint64_t>, e::intrusive_ptr<pending> >::iterator it;
+
+        for (it = m_pending.begin(); it != m_pending.end(); )
+        {
+            e::intrusive_ptr<pending> p(it->second);
+
+            if (p->transaction_finished(this, tg, outcome))
+            {
+                m_pending.erase(it);
+                it = m_pending.begin();
+            }
+            else
+            {
+                ++it;
+            }
+        }
+
+        return 0;
+    }
+    else if (msg_type != CLIENT_RESPONSE)
+    {
+        ERROR(SERVER_ERROR) << "communication error: server "
+                            << cid_num << " sent message="
+                            << msg->as_slice().hex()
+                            << " which is not a client response";
+        return -1;
+    }
+
+    up = up >> nonce;
+
+    if (up.error())
+    {
+        ERROR(SERVER_ERROR) << "communication error: server "
+                            << cid_num << " sent message="
+                            << msg->as_slice().hex()
+                            << " without nonce";
         return -1;
     }
 

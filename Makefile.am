@@ -332,6 +332,7 @@ libconsus_la_SOURCES += common/partition.cc
 libconsus_la_SOURCES += common/paxos_group.cc
 libconsus_la_SOURCES += common/ring.cc
 libconsus_la_SOURCES += common/transaction_id.cc
+libconsus_la_SOURCES += common/transaction_group.cc
 libconsus_la_SOURCES += common/txman.cc
 libconsus_la_SOURCES += common/txman_configuration.cc
 libconsus_la_SOURCES += common/txman_state.cc

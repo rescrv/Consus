@@ -56,6 +56,7 @@ class pending_transaction_read : public pending
                                        uint64_t nonce,
                                        std::auto_ptr<e::buffer> msg,
                                        e::unpacker up);
+        virtual bool transaction_finished(client* cl, const transaction_group& tg, uint64_t outcome);
 
     private:
         void send_request(client* cl);

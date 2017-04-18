@@ -65,6 +65,12 @@ pending :: handle_busybee_op(client*,
 {
 }
 
+bool
+pending :: transaction_finished(client*, const transaction_group&, uint64_t)
+{
+    return false;
+}
+
 std::ostream&
 pending :: error(const char* file, size_t line)
 {

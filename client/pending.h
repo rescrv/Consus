@@ -40,6 +40,7 @@
 #include "namespace.h"
 #include "common/ids.h"
 #include "common/network_msgtype.h"
+#include "common/transaction_group.h"
 
 BEGIN_CONSUS_NAMESPACE
 class client;
@@ -77,6 +78,7 @@ class pending
                                        uint64_t nonce,
                                        std::auto_ptr<e::buffer> msg,
                                        e::unpacker up);
+        virtual bool transaction_finished(client* cl, const transaction_group& tg, uint64_t outcome);
 
     // refcount
     protected:
