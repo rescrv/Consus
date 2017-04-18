@@ -1288,8 +1288,13 @@ transaction :: work_state_machine_global_commit_vote(daemon* d)
     {
         daemon::local_voter_map_t::state_reference lvsr;
         local_voter* lv = d->m_local_voters.get_state(m_tg, &lvsr);
-        assert(lv);
-        uint64_t v = lv->outcome();
+        uint64_t v = 0;
+
+        if (!lv || !lv->outcome(&v))
+        {
+            return;
+        }
+
         gv->init(v, m_dcs, m_dcs_sz, d);
     }
 
