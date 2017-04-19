@@ -74,6 +74,27 @@ consus :: replica_sets_agree(comm_id target,
            a.transitioning[idx_a] == b.transitioning[idx_b];
 }
 
+bool
+consus :: operator == (const replica_set& lhs, const replica_set& rhs)
+{
+    if (lhs.num_replicas != rhs.num_replicas ||
+        lhs.desired_replication != rhs.desired_replication)
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < lhs.num_replicas; ++i)
+    {
+        if (lhs.replicas[i] != rhs.replicas[i] ||
+            lhs.transitioning[i] != rhs.transitioning[i])
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 std::ostream&
 consus :: operator << (std::ostream& lhs, const replica_set& rhs)
 {

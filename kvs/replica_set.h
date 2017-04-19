@@ -61,6 +61,12 @@ replica_sets_agree(comm_id target,
                    const replica_set& a,
                    const replica_set& b);
 
+bool
+operator == (const replica_set& lhs, const replica_set& rhs);
+inline bool
+operator != (const replica_set& lhs, const replica_set& rhs)
+{ return !(lhs == rhs); }
+
 std::ostream&
 operator << (std::ostream& lhs, const replica_set& rhs);
 

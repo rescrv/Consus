@@ -34,12 +34,23 @@
 
 using consus::configuration;
 
+struct configuration::cached_ring
+{
+    cached_ring() : dc() {}
+    ~cached_ring() throw () {}
+
+    data_center_id dc;
+    size_t replica_sets[CONSUS_KVS_PARTITIONS];
+};
+
 configuration :: configuration()
     : m_cluster()
     , m_version()
     , m_flags(0)
     , m_kvss()
     , m_rings()
+    , m_cached_replica_sets()
+    , m_cached_rings()
 {
 }
 
@@ -122,47 +133,25 @@ configuration :: hash(data_center_id dc,
     uint16_t index;
     e::unpack16be(buf, &index);
 
-    ring* r = NULL;
-
     for (size_t i = 0; i < m_rings.size(); ++i)
     {
-        if (m_rings[i].dc == dc)
+        if (m_cached_rings[i].dc == dc)
         {
-            r = &m_rings[i];
-            break;
+            size_t r = m_cached_rings[i].replica_sets[index];
+            assert(r < m_cached_replica_sets.size());
+            *rs = m_cached_replica_sets[r];
+            rs->desired_replication = 5;//XXX
+
+            if (rs->num_replicas > rs->desired_replication)
+            {
+                rs->num_replicas = rs->desired_replication;
+            }
+
+            return true;
         }
     }
 
-    if (!r)
-    {
-        return false;
-    }
-
-    rs->desired_replication = 5;//XXX
-    rs->num_replicas = 0;
-    rs->replicas[0] = comm_id();
-
-    for (size_t i = 0; i < CONSUS_KVS_PARTITIONS && rs->num_replicas < CONSUS_MAX_REPLICATION_FACTOR; ++i)
-    {
-        partition* p = &r->partitions[(index + i) % CONSUS_KVS_PARTITIONS];
-
-        // if the partition is assigned, we haven't wrapped around, and it's not
-        // the same as the previous partition
-        if (p->owner != comm_id() && p->owner != rs->replicas[0] &&
-            (rs->num_replicas == 0 || rs->replicas[rs->num_replicas - 1] != p->owner))
-        {
-            rs->replicas[rs->num_replicas] = p->owner;
-            rs->transitioning[rs->num_replicas] = p->next_owner;
-            ++rs->num_replicas;
-        }
-    }
-
-    if (rs->num_replicas > rs->desired_replication)
-    {
-        rs->num_replicas = rs->desired_replication;
-    }
-
-    return true;
+    return false;
 }
 
 std::vector<consus::comm_id>
@@ -189,6 +178,85 @@ configuration :: migratable_partitions(comm_id id)
     }
 
     return parts;
+}
+
+consus::comm_id
+configuration :: owner_from_next_id(partition_id id)
+{
+    for (size_t i = 0; i < m_rings.size(); ++i)
+    {
+        for (unsigned p = 0; p < CONSUS_KVS_PARTITIONS; ++p)
+        {
+            if (m_rings[i].partitions[p].next_id == id)
+            {
+                return m_rings[i].partitions[p].owner;
+            }
+        }
+    }
+
+    return comm_id();
+}
+
+std::string
+configuration :: dump() const
+{
+    return kvs_configuration(m_cluster, m_version, m_flags, m_kvss, m_rings);
+}
+
+void
+configuration :: reconstruct_cache()
+{
+    m_cached_replica_sets.clear();
+    m_cached_rings.clear();
+    m_cached_rings.resize(m_rings.size());
+
+    for (size_t i = 0; i < m_rings.size(); ++i)
+    {
+        m_cached_rings[i].dc = m_rings[i].dc;
+
+        for (size_t idx = 0; idx < CONSUS_KVS_PARTITIONS; ++idx)
+        {
+            replica_set rs;
+            rs.desired_replication = CONSUS_MAX_REPLICATION_FACTOR;
+
+            if (m_cached_replica_sets.empty() ||
+                m_cached_replica_sets.back().replicas[0] != m_rings[i].partitions[idx].owner ||
+                m_cached_replica_sets.back().transitioning[0] != m_rings[i].partitions[idx].next_owner)
+            {
+                lookup(&m_rings[i], idx, &rs);
+
+                if (m_cached_replica_sets.empty() || m_cached_replica_sets.back() != rs)
+                {
+                    m_cached_replica_sets.push_back(rs);
+                }
+            }
+
+            m_cached_rings[i].replica_sets[idx] = m_cached_replica_sets.size() - 1;
+        }
+    }
+}
+
+void
+configuration :: lookup(ring* r, uint16_t idx, replica_set* rs)
+{
+    assert(rs->desired_replication <= CONSUS_MAX_REPLICATION_FACTOR);
+    rs->num_replicas = 0;
+    rs->replicas[0] = comm_id();
+
+    for (size_t i = 0; i < CONSUS_KVS_PARTITIONS && rs->num_replicas < rs->desired_replication; ++i)
+    {
+        partition* p = &r->partitions[(idx + i) % CONSUS_KVS_PARTITIONS];
+
+        // if the partition is assigned, we haven't wrapped around, and it's not
+        // the same as the previous partition
+        if (p->owner != comm_id() && p->owner != rs->replicas[0] &&
+            (rs->num_replicas == 0 || rs->replicas[rs->num_replicas - 1] != p->owner))
+        {
+            rs->replicas[rs->num_replicas] = p->owner;
+            rs->transitioning[rs->num_replicas] = p->next_owner;
+            ++rs->num_replicas;
+        }
+    }
 }
 
 void
@@ -265,31 +333,16 @@ configuration :: migratable_partitions(comm_id id, ring* r, std::vector<partitio
     }
 }
 
-consus::comm_id
-configuration :: owner_from_next_id(partition_id id)
-{
-    for (size_t i = 0; i < m_rings.size(); ++i)
-    {
-        for (unsigned p = 0; p < CONSUS_KVS_PARTITIONS; ++p)
-        {
-            if (m_rings[i].partitions[p].next_id == id)
-            {
-                return m_rings[i].partitions[p].owner;
-            }
-        }
-    }
-
-    return comm_id();
-}
-
-std::string
-configuration :: dump() const
-{
-    return kvs_configuration(m_cluster, m_version, m_flags, m_kvss, m_rings);
-}
-
 e::unpacker
 consus :: operator >> (e::unpacker up, configuration& c)
 {
-    return kvs_configuration(up, &c.m_cluster, &c.m_version, &c.m_flags, &c.m_kvss, &c.m_rings);
+    up = kvs_configuration(up, &c.m_cluster, &c.m_version, &c.m_flags, &c.m_kvss, &c.m_rings);
+
+    if (up.error())
+    {
+        return up;
+    }
+
+    c.reconstruct_cache();
+    return up;
 }

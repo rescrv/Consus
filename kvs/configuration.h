@@ -75,6 +75,13 @@ class configuration
     public:
         std::string dump() const;
 
+    private:
+        struct cached_ring;
+
+    private:
+        void reconstruct_cache();
+        void lookup(ring* r, uint16_t idx, replica_set* rs);
+
     // XXX same as above xxx about APIs
     private:
         void migratable_partitions(comm_id id, ring* r, std::vector<partition_id>* parts);
@@ -88,6 +95,10 @@ class configuration
         uint64_t m_flags;
         std::vector<kvs_state> m_kvss;
         std::vector<ring> m_rings;
+
+        // cached data
+        std::vector<replica_set> m_cached_replica_sets;
+        std::vector<cached_ring> m_cached_rings;
 
     private:
         configuration(const configuration& other);
