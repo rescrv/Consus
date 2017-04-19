@@ -81,6 +81,6 @@ for dc in range(1, DC + 1):
         out += 'daemon consus transaction-manager --debug --foreground --data=txman{0}.dc{1} --connect-string {2} --listen 127.0.0.1 --listen-port {3} --data-center dc{1}\n'.format(r, dc, conn_str, PORT_TXMAN + dc * 1000 + r - 1001)
         out += 'daemon consus key-value-store --debug --foreground --data=kvs{0}.dc{1} --connect-string {2} --listen 127.0.0.1 --listen-port {3} --data-center dc{1}\n'.format(r, dc, conn_str, PORT_KVS + dc * 1000 + r - 1001)
 out += '\n'
-out += 'run consus availability-check --stable --transaction-managers {0} --key-value-stores {0} --transaction-manager-groups {1} --timeout 30\n'.format(DC * R, DC)
+out += 'run consus availability-check --stable --transaction-managers {0} --key-value-stores {0} --transaction-manager-groups {1} --timeout 300\n'.format(DC * R, DC)
 
 sys.stdout.write(out)

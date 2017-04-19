@@ -89,4 +89,4 @@ daemon consus key-value-store --debug --foreground --data=kvs4.dc5 --connect-str
 daemon consus transaction-manager --debug --foreground --data=txman5.dc5 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 26755 --data-center dc5
 daemon consus key-value-store --debug --foreground --data=kvs5.dc5 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 26765 --data-center dc5
 
-run consus availability-check --stable --transaction-managers 25 --key-value-stores 25 --transaction-manager-groups 5 --timeout 30
+run consus availability-check --stable --transaction-managers 25 --key-value-stores 25 --transaction-manager-groups 5 --timeout 300

@@ -44,4 +44,4 @@ daemon consus key-value-store --debug --foreground --data=kvs4.dc2 --connect-str
 daemon consus transaction-manager --debug --foreground --data=txman5.dc2 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 23755 --data-center dc2
 daemon consus key-value-store --debug --foreground --data=kvs5.dc2 --connect-string 127.0.0.1:1982 --listen 127.0.0.1 --listen-port 23765 --data-center dc2
 
-run consus availability-check --stable --transaction-managers 10 --key-value-stores 10 --transaction-manager-groups 2 --timeout 30
+run consus availability-check --stable --transaction-managers 10 --key-value-stores 10 --transaction-manager-groups 2 --timeout 300
