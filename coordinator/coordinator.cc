@@ -793,7 +793,7 @@ coordinator :: regenerate_paxos_groups(rsm_context*)
 
             if (!ts || ts->state != txman_state::ONLINE)
             {
-                remove = true;
+                // XXX remove = true;
             }
         }
 

@@ -13,6 +13,7 @@ List of major "TODO" items left:
  - Optimization
     - Durable log throughput/latency
     - Remove early phases of paxos with implicit leader
+ - removing paxos group should not crash txmen
 
 
 - rate limit p1a messages for global/local gpaxos
