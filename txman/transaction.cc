@@ -1212,6 +1212,31 @@ transaction :: work_state_machine_executing(daemon* d)
 void
 transaction :: work_state_machine_local_commit_vote(daemon* d)
 {
+    uint64_t outcome;
+
+    if (d->m_dispositions.get(m_tg, &outcome))
+    {
+        // de-dupe this
+
+        if (outcome == CONSUS_VOTE_COMMIT)
+        {
+            LOG_IF(INFO, s_debug_mode) << logid() << " local vote chose COMMIT; transitioning to COMMITTED state";
+            m_state = COMMITTED;
+        }
+        else if (outcome == CONSUS_VOTE_ABORT)
+        {
+            LOG_IF(INFO, s_debug_mode) << logid() << " local vote chose ABORT; transitioning to ABORTED state";
+            m_state = ABORTED;
+        }
+        else
+        {
+            LOG(ERROR) << logid() << " local commit failed; invariants violated";
+            return;
+        }
+
+        return work_state_machine(d);
+    }
+
     for (size_t i = 0; i < m_ops.size(); ++i)
     {
         if (m_ops[i].type == LOG_ENTRY_NOP)
@@ -1228,7 +1253,6 @@ transaction :: work_state_machine_local_commit_vote(daemon* d)
     assert(lv);
     lv->set_preferred_vote(m_prefer_to_commit && m_ops.back().type == LOG_ENTRY_TX_PREPARE
                            ? CONSUS_VOTE_COMMIT : CONSUS_VOTE_ABORT, d);
-    uint64_t outcome;
 
     if (!lv->outcome(&outcome))
     {
@@ -1280,6 +1304,31 @@ transaction :: work_state_machine_local_commit_vote(daemon* d)
 void
 transaction :: work_state_machine_global_commit_vote(daemon* d)
 {
+    uint64_t outcome;
+
+    if (d->m_dispositions.get(m_tg, &outcome))
+    {
+        // de-dupe this
+
+        if (outcome == CONSUS_VOTE_COMMIT)
+        {
+            LOG_IF(INFO, s_debug_mode) << logid() << " global vote chose COMMIT; transitioning to COMMITTED state";
+            m_state = COMMITTED;
+        }
+        else if (outcome == CONSUS_VOTE_ABORT)
+        {
+            LOG_IF(INFO, s_debug_mode) << logid() << " global vote chose ABORT; transitioning to ABORTED state";
+            m_state = ABORTED;
+        }
+        else
+        {
+            LOG(ERROR) << logid() << " global commit failed; invariants violated";
+            return;
+        }
+
+        return work_state_machine(d);
+    }
+
     daemon::global_voter_map_t::state_reference gvsr;
     global_voter* gv = d->m_global_voters.get_or_create_state(m_tg, &gvsr);
 
@@ -1358,8 +1407,6 @@ transaction :: work_state_machine_global_commit_vote(daemon* d)
             }
         }
     }
-
-    uint64_t outcome;
 
     if (!gv->outcome(&outcome))
     {
