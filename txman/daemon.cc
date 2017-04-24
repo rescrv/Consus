@@ -1316,6 +1316,11 @@ daemon :: debug_dump()
     LOG(INFO) << "configuration version: " << get_config()->version().get();
     LOG(INFO) << "note that entries can appear multiple times in the following tables";
     LOG(INFO) << "this is a natural consequence of not holding global locks during the dump";
+    {
+        po6::threads::mutex::hold hold(&m_durable_mtx);
+        LOG(INFO) << m_durable_cbs.size() << " unanswered durable callbacks";
+        LOG(INFO) << m_durable_msgs.size() << " unanswered durable messages";
+    }
     LOG(INFO) << "--------------------------------- Transactions ---------------------------------";
 
     for (transaction_map_t::iterator it(&m_transactions); it.valid(); ++it)
