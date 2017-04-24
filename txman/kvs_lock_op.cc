@@ -114,7 +114,7 @@ kvs_lock_op :: response(consus_returncode rc, daemon* d)
         tx_func = m_tx_func;
     }
 
-    if (tx_group != transaction_group())
+    if (tx_group != transaction_group() && tx_func)
     {
         daemon::transaction_map_t::state_reference tsr;
         transaction* xact = d->m_transactions.get_state(tx_group, &tsr);

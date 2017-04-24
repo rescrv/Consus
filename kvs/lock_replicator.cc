@@ -426,11 +426,12 @@ lock_replicator :: work_state_machine(daemon* d)
             const size_t sz = BUSYBEE_HEADER_SIZE
                             + pack_size(TXMAN_HOLD_LOCK)
                             + sizeof(uint64_t)
-                            + pack_size(mode);
+                            + pack_size(mode)
+                            + pack_size(m_table)
+                            + pack_size(m_key);
             std::auto_ptr<e::buffer> msg(e::buffer::create(sz));
-            msg->pack_at(BUSYBEE_HEADER_SIZE) << TXMAN_HOLD_LOCK << m_nonce << mode;
-            // XXX this needs to contain info to pass to "mode" to break the
-            // lock
+            msg->pack_at(BUSYBEE_HEADER_SIZE)
+                << TXMAN_HOLD_LOCK << m_nonce << mode << m_table << m_key;
             m_info_limiter.transmit_now(mode, now);
             d->send(m_id, msg);
         }

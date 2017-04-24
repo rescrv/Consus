@@ -770,10 +770,22 @@ daemon :: process_hold_lock(comm_id, std::auto_ptr<e::buffer>, e::unpacker up)
 {
     uint64_t nonce;
     transaction_group tg;
+    e::slice table;
+    e::slice key;
     up = up >> nonce >> tg;
     CHECK_UNPACK(TXMAN_HOLD_LOCK, up);
 
-    LOG(INFO) << "XXX action not implemented " << nonce << " held up by transaction " << tg;
+    transaction_map_t::state_reference tsr;
+    transaction* xact = m_transactions.get_state(tg, &tsr);
+
+    if (m_dispositions.has(tg) && !xact)
+    {
+        LOG(INFO) << "unlocking lock held by " << transaction_group::log(tg)
+                  << " which cleaned up without unlocking";
+        daemon::lock_op_map_t::state_reference sr;
+        kvs_lock_op* kv = create_lock_op(&sr);
+        kv->doit(LOCK_UNLOCK, table, key, tg, this);
+    }
 }
 
 void
