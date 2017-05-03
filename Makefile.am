@@ -604,20 +604,20 @@ TESTS += ${gremlins}
 check_PROGRAMS += test/paxos/generalized
 TESTS += test/paxos/generalized
 test_paxos_generalized_SOURCES = test/paxos/generalized.cc txman/generalized_paxos.cc common/ids.cc ${th_sources}
-test_paxos_generalized_LDADD = ${E_LIBS}
+test_paxos_generalized_LDADD = $(E_LIBS)
 
 check_PROGRAMS += test/paxos/generalized-brute-force
 test_paxos_generalized_brute_force_SOURCES = test/paxos/generalized-brute-force.cc txman/generalized_paxos.cc common/ids.cc
-test_paxos_generalized_brute_force_LDADD = ${E_LIBS} $(POPT_LIBS)
+test_paxos_generalized_brute_force_LDADD = $(E_LIBS) $(POPT_LIBS)
 
 check_PROGRAMS += test/paxos/generalized-performance
 test_paxos_generalized_performance_SOURCES = test/paxos/generalized-performance.cc txman/generalized_paxos.cc common/ids.cc
-test_paxos_generalized_performance_LDADD = ${E_LIBS} $(POPT_LIBS)
+test_paxos_generalized_performance_LDADD = $(E_LIBS) $(POPT_LIBS)
 
 check_PROGRAMS += test/paxos/generalized-counter-example-generator
 test_paxos_generalized_counter_example_generator_SOURCES = test/paxos/generalized-counter-example-generator.cc txman/generalized_paxos.cc common/ids.cc
 test_paxos_generalized_counter_example_generator_CPPFLAGS = -DGENERALIZED_PAXOS_THROW $(AM_CPPFLAGS) $(CPPFLAGS)
-test_paxos_generalized_counter_example_generator_LDADD = ${E_LIBS} $(POPT_LIBS)
+test_paxos_generalized_counter_example_generator_LDADD = $(E_LIBS) $(POPT_LIBS)
 
 consus-tests.tar.gz: $(wildcard test/*.gremlin) $(wildcard test/*/*.gremlin) $(wildcard test/*.sh) $(wildcard test/*/*.sh) $(wildcard test/*.py) $(wildcard test/*/*.py)
 	tar czvf $@ --transform 's,test/,${PACKAGE_TARNAME}-${PACKAGE_VERSION}/test/,' $^
