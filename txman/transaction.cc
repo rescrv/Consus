@@ -1070,12 +1070,46 @@ transaction :: externally_work_state_machine(daemon* d)
     work_state_machine(d);
 }
 
+#define yn(x) "        " STR(x) " = " << (op.x ? "yes" : "no") << "\n"
+
 std::string
 transaction :: debug_dump()
 {
     std::ostringstream ostr;
     po6::threads::mutex::hold hold(&m_mtx);
-    ostr << m_state;
+    ostr << m_state << "\n";
+
+    for (size_t i = 0; i < m_ops.size(); ++i)
+    {
+        const operation& op(m_ops[i]);
+        ostr << "op[" << i << "] = " << op.type << "\n"
+             << "        table = " << e::strescape(op.table.str()) << "\n"
+             << "        key = " << e::strescape(op.key.str()) << "\n"
+             << "        timestamp = " << op.timestamp << "\n"
+             << "        value = " << e::strescape(op.value.str()) << "\n"
+             << "        rc = " << op.rc << "\n"
+             << yn(require_lock)
+             << yn(lock_acquired)
+             << yn(lock_released)
+             << "        lock_nonce = " << op.lock_nonce << "\n"
+             << yn(require_read)
+             << yn(read_done)
+             << "        read_nonce = " << op.read_nonce << "\n"
+             << yn(require_write)
+             << yn(write_done)
+             << "        write_nonce = " << op.write_nonce << "\n"
+             << yn(require_verify_read)
+             << yn(verify_read_done)
+             << "        verify_read_nonce = " << op.verify_read_nonce << "\n"
+             << yn(require_verify_write)
+             << yn(verify_write_done)
+             << "        verify_write_nonce = " << op.verify_write_nonce << "\n"
+             << yn(log_write_issued)
+             << yn(log_write_durable)
+             << "        client = " << op.client << "\n"
+             << "        nonce = " << op.nonce << "\n";
+    }
+
     return ostr.str();
 }
 
