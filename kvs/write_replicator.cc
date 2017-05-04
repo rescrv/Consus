@@ -146,6 +146,13 @@ write_replicator :: response(comm_id id,
                              daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
+
+    if (!m_init)
+    {
+        LOG_IF(INFO, s_debug_mode) << logid() << " dropped response for uninitialized write replicator";
+        return;
+    }
+
     write_stub* stub = get_stub(id);
 
     if (!stub)
@@ -183,6 +190,12 @@ void
 write_replicator :: externally_work_state_machine(daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
+
+    if (!m_init)
+    {
+        return;
+    }
+
     work_state_machine(d);
 }
 
@@ -251,6 +264,7 @@ write_replicator :: get_or_create_stub(comm_id id)
 void
 write_replicator :: work_state_machine(daemon* d)
 {
+    assert(m_init);
     configuration* c = d->get_config();
     replica_set rs;
 

@@ -127,6 +127,13 @@ read_replicator :: response(comm_id id, consus_returncode rc,
                             std::auto_ptr<e::buffer> backing, daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
+
+    if (!m_init)
+    {
+        LOG_IF(INFO, s_debug_mode) << logid() << " dropped response for uninitialized read replicator";
+        return;
+    }
+
     read_stub* stub = get_stub(id);
 
     if (!stub)
@@ -186,6 +193,12 @@ void
 read_replicator :: externally_work_state_machine(daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
+
+    if (!m_init)
+    {
+        return;
+    }
+
     work_state_machine(d);
 }
 
@@ -218,6 +231,7 @@ read_replicator :: get_stub(comm_id id)
 void
 read_replicator :: work_state_machine(daemon* d)
 {
+    assert(m_init);
     configuration* c = d->get_config();
     replica_set rs;
 

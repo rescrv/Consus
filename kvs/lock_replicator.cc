@@ -182,6 +182,13 @@ lock_replicator :: response(comm_id id, const transaction_group& tg,
                             const replica_set& rs, daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
+
+    if (!m_init)
+    {
+        LOG_IF(INFO, s_debug_mode) << logid() << " dropped response for uninitialized lock replicator";
+        return;
+    }
+
     lock_stub* stub = get_stub(id);
 
     if (!stub)
@@ -227,6 +234,13 @@ void
 lock_replicator :: externally_work_state_machine(daemon* d)
 {
     po6::threads::mutex::hold hold(&m_mtx);
+
+    if (!m_init)
+    {
+        LOG_IF(INFO, s_debug_mode) << logid() << " dropped response for uninitialized lock replicator";
+        return;
+    }
+
     work_state_machine(d);
 }
 
@@ -318,6 +332,7 @@ lock_replicator :: get_or_create_stub(comm_id id)
 void
 lock_replicator :: work_state_machine(daemon* d)
 {
+    assert(m_init);
     configuration* c = d->get_config();
     replica_set rs;
 
