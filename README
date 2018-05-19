@@ -35,6 +35,22 @@ minimum necessary to tolerate a data center failure---requires two message
 delays. Protocols such as 2-phase commit or Paxos require two round trips, or
 four message delays.
 
+What is the state of Consus?
+============================
+
+Consus was the capstone of my Ph.D. thesis.  I have since graduated and have
+other commitments that take me away from maintaining the project.  Anyone
+trying to use the code should beware the following:
+
+ - There is a deadlock bug that shows up under contending concurrency that I
+   never got a chance to track down fully.  The remedy will likely involve
+   changing both the key-value store and the transaction manager to make sure
+   the wound-wait protocol works correctly.
+ - I probably would not want to run this system in production without
+   significant further testing.  The generalized paxos pieces are the most
+   compex and, despite being the focus of most of my testing, probably not
+   something anybody would want to debug at 3am.
+
 More Resources
 ==============
 
